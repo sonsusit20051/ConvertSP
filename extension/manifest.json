@@ -1,0 +1,29 @@
+{
+  "manifest_version": 3,
+  "name": "Shopee Affiliate Link Converter Bridge",
+  "version": "1.0.0",
+  "description": "Worker nền lấy job convert link và xử lý bằng API nội bộ Shopee Affiliate.",
+  "permissions": [
+    "alarms",
+    "offscreen",
+    "cookies",
+    "webRequest",
+    "tabs",
+    "scripting"
+  ],
+  "host_permissions": [
+    "https://your-internal-api.example.com/*",
+    "https://*.shopee.vn/*",
+    "https://affiliate.shopee.vn/*",
+    "https://*.affiliate.shopee.vn/*",
+    "http://127.0.0.1:8787/*",
+    "http://localhost:8787/*"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "action": {
+    "default_title": "Shopee Converter Worker",
+    "default_popup": "popup.html"
+  }
+}
