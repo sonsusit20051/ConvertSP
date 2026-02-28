@@ -76,8 +76,8 @@
     INTERNAL_API_FAIL_CODE_FIELD: "data.batchCustomLink[0].failCode",
     INTERNAL_API_SUCCESS_FAIL_CODE: 0,
 
-    BACKEND_BASE_URL: "http://127.0.0.1:8787",
-    WORKER_KEY: "change-me-worker-key",
+    BACKEND_BASE_URL: "https://convertsp-api.onrender.com",
+    WORKER_KEY: "iomnos24_worker_2026",
 
     // Chrome alarms in production require >= 1 minute.
     WORKER_ALARM: "poll-job-queue",
