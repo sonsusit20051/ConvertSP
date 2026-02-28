@@ -108,6 +108,8 @@ h1{font-size:clamp(26px,3vw,44px); margin:0; letter-spacing:-0.02em; line-height
 }
 .result .link.ready{
   color:var(--primary1);
+  font-size:15px;
+  font-weight:700;
 }
 .status{font-size:14px; color:var(--muted); margin-top:14px;}
 
