@@ -1,5 +1,5 @@
 window.ShopeeConfig = {
-  APP_VERSION: "2026.03.01.4",
+  APP_VERSION: "2026.03.01.5",
   BACKEND_BASE_URL: "https://convertsp-api.onrender.com",
   JOB_TIMEOUT_MS: 120000,
   JOB_POLL_MS: 400,

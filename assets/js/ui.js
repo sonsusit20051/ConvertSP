@@ -2,6 +2,14 @@
   const dom = window.ShopeeDom;
   const state = window.ShopeeState;
 
+  function setPreviewReady(ready) {
+    if (ready) {
+      dom.resultPreview.classList.add("ready");
+      return;
+    }
+    dom.resultPreview.classList.remove("ready");
+  }
+
   function setStatus(msg) {
     dom.status.textContent = msg || "";
   }
@@ -26,6 +34,7 @@
     dom.btnOpen.disabled = true;
     dom.btnCopy.textContent = "Sao chép";
     dom.resultPreview.removeAttribute("title");
+    setPreviewReady(false);
   }
 
   function setInput(value) {
@@ -42,6 +51,7 @@
 
   function showDefaultResult() {
     setResultPreview("Kết quả sẽ hiển thị ở đây...");
+    setPreviewReady(false);
   }
 
   function setGenerated(fullUrl) {
@@ -50,6 +60,7 @@
     dom.btnOpen.disabled = false;
     setResultPreview(fullUrl);
     dom.resultPreview.setAttribute("title", fullUrl);
+    setPreviewReady(true);
   }
 
   function showCopySuccess() {
