@@ -161,21 +161,32 @@
 
   async function waitForJob(jobId) {
     const deadline = Date.now() + cfg.JOB_TIMEOUT_MS;
-    const pickupDeadline = Date.now() + Math.max(1000, Number(cfg.JOB_PENDING_PICKUP_TIMEOUT_MS) || 8000);
+    const pickupDeadline = Date.now() + Math.max(1000, Number(cfg.JOB_PENDING_PICKUP_TIMEOUT_MS) || 10000);
+    const processingTimeoutMs = Math.max(1000, Number(cfg.JOB_PROCESSING_TIMEOUT_MS) || 10000);
+    let processingStartedAt = 0;
 
     while (Date.now() < deadline) {
       const rawJob = await getJob(jobId);
       const job = normalizeJobResponse(rawJob);
+      const status = String(job.status || "").toLowerCase();
 
-      if (isDoneStatus(job.status) && job.outputUrl) return job.outputUrl;
-      if (isDoneStatus(job.status) && !job.outputUrl) {
+      if (isDoneStatus(status) && job.outputUrl) return job.outputUrl;
+      if (isDoneStatus(status) && !job.outputUrl) {
         throw new Error("Job đã hoàn tất nhưng thiếu outputUrl.");
       }
-      if (isFailedStatus(job.status)) {
+      if (isFailedStatus(status)) {
         throw new Error(job.error || "Convert thất bại.");
       }
-      if ((job.status === "pending" || !job.status) && Date.now() >= pickupDeadline) {
+      if ((status === "pending" || !status) && Date.now() >= pickupDeadline) {
         throw new Error("Extension worker không phản hồi, chuyển luồng 2.");
+      }
+      if (status === "processing") {
+        if (!processingStartedAt) processingStartedAt = Date.now();
+        if (Date.now() - processingStartedAt >= processingTimeoutMs) {
+          throw new Error("Job processing quá 10s, chuyển luồng 2.");
+        }
+      } else {
+        processingStartedAt = 0;
       }
 
       await new Promise((resolve) => setTimeout(resolve, cfg.JOB_POLL_MS));
