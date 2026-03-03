@@ -100,6 +100,23 @@
 
   async function createJob(rawUrl, source) {
     const normalizedSource = String(source || "fb").toLowerCase() === "yt" ? "yt" : "fb";
+    if (normalizedSource === "fb") {
+      try {
+        const availabilityRes = await fetchWithTimeout(`${cfg.BACKEND_BASE_URL}/api/worker/availability`, {
+          cache: "no-store"
+        });
+        const availabilityData = await parseJsonSafe(availabilityRes);
+        if (availabilityRes.ok && availabilityData && availabilityData.online === false) {
+          throw new Error("Extension worker đang offline, chuyển ngay sang luồng 2.");
+        }
+      } catch (err) {
+        const msg = String((err && err.message) || "");
+        if (msg.includes("offline")) {
+          throw err;
+        }
+      }
+    }
+
     const res = await fetchWithTimeout(`${cfg.BACKEND_BASE_URL}/api/jobs`, {
       method: "POST",
       cache: "no-store",

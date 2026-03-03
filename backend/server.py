@@ -56,6 +56,7 @@ RATE_LIMIT_CLEANUP_INTERVAL_SEC = int(os.environ.get("RATE_LIMIT_CLEANUP_INTERVA
 
 JOB_RETENTION_HOURS = int(os.environ.get("JOB_RETENTION_HOURS", "24"))
 JOB_CLEANUP_INTERVAL_SEC = int(os.environ.get("JOB_CLEANUP_INTERVAL_SEC", "300"))
+WORKER_AVAILABILITY_TTL_SEC = int(os.environ.get("WORKER_AVAILABILITY_TTL_SEC", "30"))
 
 # Comma-separated list: "https://app.example.com,https://admin.example.com"
 ALLOWED_ORIGINS_RAW = os.environ.get(
@@ -82,6 +83,20 @@ ALLOWED_SOURCES = {"fb", "yt"}
 
 def now_iso() -> str:
     return datetime.now(timezone.utc).replace(microsecond=0).isoformat()
+
+
+def parse_iso_utc(value: Optional[str]) -> Optional[datetime]:
+    raw = (value or "").strip()
+    if not raw:
+        return None
+    normalized = raw.replace("Z", "+00:00")
+    try:
+        dt = datetime.fromisoformat(normalized)
+    except ValueError:
+        return None
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return dt.astimezone(timezone.utc)
 
 
 def parse_allowed_origins(raw: str) -> list[str]:
@@ -480,6 +495,34 @@ def init_db() -> None:
             """,
             (now_iso(),),
         )
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS worker_runtime (
+              id INTEGER PRIMARY KEY CHECK (id = 1),
+              is_connected INTEGER NOT NULL DEFAULT 0,
+              last_ping_at TEXT,
+              updated_at TEXT NOT NULL
+            )
+            """
+        )
+        worker_cols = {row["name"] for row in conn.execute("PRAGMA table_info(worker_runtime)").fetchall()}
+        if "is_connected" not in worker_cols:
+            conn.execute("ALTER TABLE worker_runtime ADD COLUMN is_connected INTEGER NOT NULL DEFAULT 0")
+        if "last_ping_at" not in worker_cols:
+            conn.execute("ALTER TABLE worker_runtime ADD COLUMN last_ping_at TEXT")
+        if "updated_at" not in worker_cols:
+            conn.execute("ALTER TABLE worker_runtime ADD COLUMN updated_at TEXT NOT NULL DEFAULT ''")
+        conn.execute(
+            """
+            INSERT OR IGNORE INTO worker_runtime (
+              id,
+              is_connected,
+              last_ping_at,
+              updated_at
+            ) VALUES (1, 0, NULL, ?)
+            """,
+            (now_iso(),),
+        )
         conn.commit()
     finally:
         conn.close()
@@ -711,6 +754,68 @@ def append_worker_reload_metrics(reloaded_tabs: int, cycle_count: int, last_relo
         conn.close()
 
 
+def update_worker_runtime(connected: bool, ping_at: Optional[str] = None) -> None:
+    now = now_iso()
+    effective_ping = (ping_at or "").strip() or now
+    conn = db_conn()
+    try:
+        conn.execute(
+            """
+            INSERT OR IGNORE INTO worker_runtime (
+              id,
+              is_connected,
+              last_ping_at,
+              updated_at
+            ) VALUES (1, 0, NULL, ?)
+            """,
+            (now,),
+        )
+        conn.execute(
+            """
+            UPDATE worker_runtime
+            SET
+              is_connected = ?,
+              last_ping_at = ?,
+              updated_at = ?
+            WHERE id = 1
+            """,
+            (1 if connected else 0, effective_ping, now),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def get_worker_availability() -> dict:
+    conn = db_conn()
+    try:
+        row = conn.execute(
+            "SELECT is_connected, last_ping_at, updated_at FROM worker_runtime WHERE id = 1"
+        ).fetchone()
+    finally:
+        conn.close()
+
+    is_connected = bool(int((row["is_connected"] if row else 0) or 0))
+    last_ping_at = row["last_ping_at"] if row else None
+    updated_at = row["updated_at"] if row else None
+
+    ping_dt = parse_iso_utc(last_ping_at)
+    stale_sec = None
+    online = False
+    if ping_dt is not None:
+        stale_sec = max(0, int((datetime.now(timezone.utc) - ping_dt).total_seconds()))
+        online = is_connected and stale_sec <= max(5, WORKER_AVAILABILITY_TTL_SEC)
+
+    return {
+        "online": bool(online),
+        "connected": bool(is_connected),
+        "lastPingAt": last_ping_at,
+        "updatedAt": updated_at,
+        "staleSec": stale_sec,
+        "ttlSec": max(5, WORKER_AVAILABILITY_TTL_SEC),
+    }
+
+
 def get_admin_requests_from_db(limit: int = 200) -> list[dict]:
     safe_limit = max(1, min(int(limit or 200), 1000))
     conn = db_conn()
@@ -776,6 +881,11 @@ class WorkerReloadMetricRequest(BaseModel):
     reloadedTabs: int = Field(default=0, ge=0, le=100)
     cycleCount: int = Field(default=1, ge=0, le=50)
     lastReloadAt: Optional[str] = None
+
+
+class WorkerPingRequest(BaseModel):
+    connected: bool = True
+    pingAt: Optional[str] = None
 
 
 class AdminLoginRequest(BaseModel):
@@ -942,6 +1052,12 @@ async def health() -> dict:
     return {"ok": True, "time": now_iso()}
 
 
+@app.get("/api/worker/availability")
+async def worker_availability() -> dict:
+    availability = await asyncio.to_thread(get_worker_availability)
+    return availability
+
+
 @app.get("/api/resolve-product-ids")
 async def resolve_product_ids(url: str) -> dict:
     try:
@@ -973,11 +1089,19 @@ async def create_job(payload: CreateJobRequest, request: Request) -> dict:
     if not allow_user_request(ip):
         raise HTTPException(status_code=429, detail="Bạn thao tác quá nhanh, vui lòng thử lại sau.")
 
+    source = normalize_source(payload.source)
+    if source == "fb":
+        availability = await asyncio.to_thread(get_worker_availability)
+        if not availability.get("online"):
+            raise HTTPException(
+                status_code=503,
+                detail="Extension worker đang offline, web sẽ chuyển sang luồng 2.",
+            )
+
     try:
         normalized = normalize_single_shopee_url(payload.url)
     except ValueError as err:
         raise HTTPException(status_code=400, detail=str(err)) from err
-    source = normalize_source(payload.source)
 
     try:
         job_id = await asyncio.to_thread(create_job_in_db, normalized, ip, source)
@@ -993,6 +1117,13 @@ async def get_job(job_id: str) -> dict:
     if not row:
         raise HTTPException(status_code=404, detail="Job không tồn tại.")
     return row
+
+
+@app.post("/api/worker/ping")
+async def worker_ping(payload: WorkerPingRequest, x_worker_key: str = Header(default="", alias="X-Worker-Key")) -> dict:
+    require_worker_key(x_worker_key)
+    await asyncio.to_thread(update_worker_runtime, bool(payload.connected), payload.pingAt)
+    return {"ok": True}
 
 
 @app.get("/api/worker/jobs/next")

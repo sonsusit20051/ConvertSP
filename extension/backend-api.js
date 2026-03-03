@@ -110,11 +110,31 @@
     }
   }
 
+  async function reportWorkerPing(connected) {
+    const res = await fetch(`${cfg.BACKEND_BASE_URL}/api/worker/ping`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-Worker-Key": cfg.WORKER_KEY
+      },
+      body: JSON.stringify({
+        connected: Boolean(connected),
+        pingAt: new Date().toISOString()
+      })
+    });
+
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      throw new Error(data.error || `Không cập nhật trạng thái worker (HTTP ${res.status}).`);
+    }
+  }
+
   self.ExtBackendApi = {
     checkBackendHealth,
     fetchNextJob,
     reportJobComplete,
     reportJobFail,
-    reportDashboardReloadMetric
+    reportDashboardReloadMetric,
+    reportWorkerPing
   };
 })(self);

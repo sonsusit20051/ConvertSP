@@ -7,9 +7,11 @@
   const OFFSCREEN_PATH = "offscreen.html";
   const OFFSCREEN_REASON = "WORKERS";
   const RELOAD_METRICS_STORAGE_KEY = "dashboardReloadMetricsV1";
+  const WORKER_PING_MIN_INTERVAL_MS = 15000;
   let lifecycleBound = false;
   let reloadMetricsLoaded = false;
   let reloadMetricsLoadPromise = null;
+  let lastWorkerPingSentAt = 0;
   const keepAliveStatus = {
     initializedAt: null,
     lastInitError: null,
@@ -21,7 +23,9 @@
     totalDashboardReloadCount: 0,
     totalDashboardReloadCycles: 0,
     lastMetricReportAt: null,
-    lastMetricReportError: null
+    lastMetricReportError: null,
+    lastWorkerPingAt: null,
+    lastWorkerPingError: null
   };
 
   function sanitizeNonNegativeInt(value) {
@@ -86,6 +90,25 @@
     } catch (err) {
       keepAliveStatus.lastMetricReportError = (err && err.message) || "Không gửi được metric reload.";
       console.warn("Reload metric report warning:", keepAliveStatus.lastMetricReportError);
+    }
+  }
+
+  async function reportWorkerPing(connected, force) {
+    if (!backendApi || typeof backendApi.reportWorkerPing !== "function") return;
+    if (!cfg.BACKEND_BASE_URL || !cfg.WORKER_KEY) return;
+
+    const nowMs = Date.now();
+    if (!force && connected && nowMs - lastWorkerPingSentAt < WORKER_PING_MIN_INTERVAL_MS) {
+      return;
+    }
+
+    try {
+      await backendApi.reportWorkerPing(connected);
+      lastWorkerPingSentAt = nowMs;
+      keepAliveStatus.lastWorkerPingAt = new Date().toISOString();
+      keepAliveStatus.lastWorkerPingError = null;
+    } catch (err) {
+      keepAliveStatus.lastWorkerPingError = (err && err.message) || "Không gửi được ping worker.";
     }
   }
 
@@ -179,20 +202,27 @@
     chrome.runtime.onInstalled.addListener(() => {
       setupAlarms();
       ensureOffscreenDocument().catch((err) => console.error("Offscreen init failed:", err));
+      reportWorkerPing(true, true).catch(() => {});
       runner.runWorkerCycle("onInstalled").catch((err) => console.error("Worker init failed:", err));
     });
 
     chrome.runtime.onStartup.addListener(() => {
       setupAlarms();
       ensureOffscreenDocument().catch((err) => console.error("Offscreen startup failed:", err));
+      reportWorkerPing(true, true).catch(() => {});
       runner.runWorkerCycle("onStartup").catch((err) => console.error("Worker startup failed:", err));
     });
 
     chrome.alarms.onAlarm.addListener((alarm) => {
       if (alarm.name === cfg.WORKER_ALARM) {
-        runner.runWorkerCycle("alarm").catch((err) => {
-          console.error("Worker alarm cycle failed:", err);
-        });
+        (async () => {
+          const connected = !connection || (await connection.isConnected());
+          await reportWorkerPing(connected, false);
+          if (!connected) return;
+          runner.runWorkerCycle("alarm").catch((err) => {
+            console.error("Worker alarm cycle failed:", err);
+          });
+        })().catch(() => {});
         return;
       }
 
@@ -208,7 +238,9 @@
       keepAliveStatus.lastKeepaliveTickAt = new Date().toISOString();
 
       (async () => {
-        if (connection && !(await connection.isConnected())) return;
+        const connected = !connection || (await connection.isConnected());
+        await reportWorkerPing(connected, false);
+        if (!connected) return;
         runner.runWorkerCycle("keepaliveTick").catch((err) => {
           console.error("Worker keepalive cycle failed:", err);
         });
@@ -227,7 +259,9 @@
       await loadReloadMetricsOnce();
       await ensureOffscreenDocument();
       keepAliveStatus.offscreenActive = await hasOffscreenDocument();
-      if (!connection || (await connection.isConnected())) {
+      const connected = !connection || (await connection.isConnected());
+      await reportWorkerPing(connected, true);
+      if (connected) {
         await runner.runWorkerCycle("initKeepAlive");
       }
       keepAliveStatus.lastInitError = null;
@@ -246,6 +280,7 @@
 
   self.ExtKeepAlive = {
     initKeepAlive,
-    getStatus
+    getStatus,
+    reportWorkerPing
   };
 })(self);

@@ -78,6 +78,11 @@
           if (connection) {
             await connection.setConnected(nextConnected, "popupToggle");
           }
+          if (keepAlive && typeof keepAlive.reportWorkerPing === "function") {
+            await keepAlive.reportWorkerPing(nextConnected, true);
+          } else if (backendApi && typeof backendApi.reportWorkerPing === "function") {
+            await backendApi.reportWorkerPing(nextConnected);
+          }
           if (nextConnected) {
             runner.runWorkerCycle("popupReconnect").catch(() => {});
           }

@@ -140,6 +140,8 @@
       || text.includes("http 500")
       || text.includes("không thể xử lý yêu cầu")
       || text.includes("failed to fetch")
+      || text.includes("worker đang offline")
+      || text.includes("luồng 2")
     );
   }
 
