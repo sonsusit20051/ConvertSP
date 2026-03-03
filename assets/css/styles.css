@@ -210,24 +210,6 @@ body {
   position: relative;
 }
 
-.yt-key-wrap {
-  margin-top: 8px;
-}
-
-.yt-key-label {
-  display: block;
-  margin-bottom: 6px;
-  font-size: 12px;
-  font-weight: 800;
-  color: #34466f;
-}
-
-.yt-key-input {
-  text-transform: uppercase;
-  letter-spacing: 0.1em;
-  font-weight: 800;
-}
-
 .input {
   width: 100%;
   height: 48px;
@@ -410,6 +392,108 @@ body {
   width: 14px;
   height: 14px;
   object-fit: contain;
+}
+
+.yt-key-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  display: grid;
+  place-items: center;
+  padding: 16px;
+}
+
+.yt-key-backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(8, 14, 29, 0.36);
+}
+
+.yt-key-dialog {
+  position: relative;
+  width: min(360px, calc(100vw - 32px));
+  border-radius: 14px;
+  border: 1px solid rgba(188, 201, 230, 0.9);
+  background: rgba(248, 251, 255, 0.96);
+  box-shadow: 0 18px 36px rgba(10, 24, 58, 0.22);
+  padding: 14px;
+}
+
+.yt-key-title {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 900;
+  color: #1a2c55;
+}
+
+.yt-key-text {
+  margin: 6px 0 10px;
+  font-size: 13px;
+  color: #45567f;
+}
+
+.yt-key-field {
+  width: 100%;
+  height: 44px;
+  border-radius: 10px;
+  border: 1px solid rgba(173, 190, 225, 0.95);
+  background: #fff;
+  color: #1b2950;
+  font-size: 20px;
+  font-weight: 900;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  padding: 0 12px;
+}
+
+.yt-key-field:focus {
+  outline: none;
+  border-color: rgba(120, 149, 219, 0.95);
+  box-shadow: 0 0 0 3px rgba(83, 118, 208, 0.16);
+}
+
+.yt-key-error {
+  min-height: 1.2em;
+  margin: 8px 2px 2px;
+  font-size: 12px;
+  color: #c12b2b;
+}
+
+.yt-key-contact {
+  display: inline-block;
+  margin: 2px 0 10px;
+  font-size: 12px;
+  font-weight: 900;
+  color: #d12525;
+  text-decoration: none;
+}
+
+.yt-key-contact:hover {
+  text-decoration: underline;
+}
+
+.yt-key-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.yt-key-btn {
+  height: 36px;
+  border-radius: 9px;
+  border: 1px solid rgba(182, 197, 227, 0.95);
+  background: #f7f9ff;
+  color: #1e305a;
+  padding: 0 12px;
+  font-size: 13px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.yt-key-btn-primary {
+  border-color: #db2323;
+  background: #db2323;
+  color: #fff;
 }
 
 @media (max-width: 980px) {

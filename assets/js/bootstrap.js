@@ -98,7 +98,7 @@
     if (dom.status) {
       dom.status.classList.remove("err", "source-fb");
       dom.status.classList.add("source-yt");
-      dom.status.textContent = "Đang ở chế độ đổi mã Youtube. Nhập key 6 ký tự do admin cấp.";
+      dom.status.textContent = "Đang ở chế độ đổi mã Youtube.";
     }
     if (ui) {
       ui.resetGenerated();

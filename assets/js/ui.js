@@ -14,16 +14,39 @@
     const source = state.getSource ? state.getSource() : "fb";
     const isYt = String(source || "fb").toLowerCase() === "yt";
     const defaultMsg = String(source || "fb").toLowerCase() === "yt"
-      ? "Đang ở chế độ đổi mã Youtube. Nhập key 6 ký tự do admin cấp."
+      ? "Đang ở chế độ đổi mã Youtube."
       : "Đang ở chế độ đổi mã Facebook.";
     dom.status.classList.remove("source-fb", "source-yt");
     dom.status.classList.add(isYt ? "source-yt" : "source-fb");
     dom.status.textContent = msg || defaultMsg;
   }
 
-  function setReadyButtons(ready) {
-    dom.btnCopy.classList.toggle("is-ready", Boolean(ready));
-    dom.btnOpen.classList.toggle("is-ready", Boolean(ready));
+  function setReadyButtonsBySource(ready) {
+    const hasOutput = Boolean(ready);
+    const source = state.getSource ? state.getSource() : "fb";
+    const isYt = String(source || "fb").toLowerCase() === "yt";
+
+    dom.btnCopy.classList.remove("is-ready");
+    dom.btnOpen.classList.remove("is-ready");
+
+    if (!hasOutput) {
+      dom.btnCopy.disabled = true;
+      dom.btnOpen.disabled = true;
+      return;
+    }
+
+    if (isYt) {
+      // Luồng YT: chỉ cho phép Mua ngay (đỏ + rung), chặn Sao chép.
+      dom.btnCopy.disabled = true;
+      dom.btnOpen.disabled = false;
+      dom.btnOpen.classList.add("is-ready");
+      return;
+    }
+
+    // Luồng FB: cho phép copy (đỏ + rung), Mua ngay vẫn dùng được nhưng không đỏ.
+    dom.btnCopy.disabled = false;
+    dom.btnOpen.disabled = false;
+    dom.btnCopy.classList.add("is-ready");
   }
 
   function setBusy(busy) {
@@ -33,13 +56,11 @@
     if (busy) {
       dom.btnCopy.disabled = true;
       dom.btnOpen.disabled = true;
-      setReadyButtons(false);
+      dom.btnCopy.classList.remove("is-ready");
+      dom.btnOpen.classList.remove("is-ready");
       return;
     }
-    const hasOutput = Boolean(state.getLastFull());
-    dom.btnCopy.disabled = !hasOutput;
-    dom.btnOpen.disabled = !hasOutput;
-    setReadyButtons(hasOutput);
+    setReadyButtonsBySource(Boolean(state.getLastFull()));
   }
 
   function resetGenerated() {
@@ -49,7 +70,7 @@
     dom.btnCopy.textContent = "Sao chép";
     dom.resultPreview.removeAttribute("title");
     setPreviewReady(false);
-    setReadyButtons(false);
+    setReadyButtonsBySource(false);
   }
 
   function setInput(value) {
@@ -71,12 +92,10 @@
 
   function setGenerated(fullUrl) {
     state.setLastFull(fullUrl);
-    dom.btnCopy.disabled = false;
-    dom.btnOpen.disabled = false;
     setResultPreview(fullUrl);
     dom.resultPreview.setAttribute("title", fullUrl);
     setPreviewReady(true);
-    setReadyButtons(true);
+    setReadyButtonsBySource(true);
   }
 
   function showCopySuccess() {

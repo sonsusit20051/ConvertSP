@@ -15,6 +15,13 @@
     btnCopy: byId("btnCopy"),
     btnOpen: byId("btnOpen"),
     resultPreview: byId("resultPreview"),
-    status: byId("status")
+    status: byId("status"),
+    ytKeyModal: byId("ytKeyModal"),
+    ytKeyModalBackdrop: byId("ytKeyModalBackdrop"),
+    ytKeyModalInput: byId("ytKeyModalInput"),
+    ytKeyModalError: byId("ytKeyModalError"),
+    ytKeyModalCancel: byId("ytKeyModalCancel"),
+    ytKeyModalConfirm: byId("ytKeyModalConfirm"),
+    ytKeyModalContact: byId("ytKeyModalContact")
   };
 })(window);

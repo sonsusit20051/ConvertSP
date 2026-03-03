@@ -638,6 +638,10 @@ class YtKeyUsedError(Exception):
     pass
 
 
+class YtKeyDisabledError(Exception):
+    pass
+
+
 def db_conn() -> sqlite3.Connection:
     conn = sqlite3.connect(DB_PATH, timeout=10)
     conn.row_factory = sqlite3.Row
@@ -747,7 +751,9 @@ def init_db() -> None:
               created_by_ip TEXT NOT NULL DEFAULT 'admin',
               used_at TEXT,
               used_by_ip TEXT,
-              used_job_id TEXT
+              used_job_id TEXT,
+              disabled_at TEXT,
+              disabled_by_ip TEXT
             )
             """
         )
@@ -760,8 +766,13 @@ def init_db() -> None:
             conn.execute("ALTER TABLE yt_keys ADD COLUMN used_by_ip TEXT")
         if "used_job_id" not in yt_key_cols:
             conn.execute("ALTER TABLE yt_keys ADD COLUMN used_job_id TEXT")
+        if "disabled_at" not in yt_key_cols:
+            conn.execute("ALTER TABLE yt_keys ADD COLUMN disabled_at TEXT")
+        if "disabled_by_ip" not in yt_key_cols:
+            conn.execute("ALTER TABLE yt_keys ADD COLUMN disabled_by_ip TEXT")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_yt_keys_created_at ON yt_keys(created_at)")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_yt_keys_used_at ON yt_keys(used_at)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_yt_keys_disabled_at ON yt_keys(disabled_at)")
         conn.commit()
     finally:
         conn.close()
@@ -788,11 +799,13 @@ def create_job_in_db(input_url: str, requester_ip: str, source: str, yt_key: Opt
                 raise YtKeyInvalidError("Key YT không hợp lệ. Key phải gồm 6 ký tự A-Z và 0-9.")
             if safe_yt_key not in YT_UNLIMITED_KEYS:
                 key_row = conn.execute(
-                    "SELECT key, used_at FROM yt_keys WHERE key = ?",
+                    "SELECT key, used_at, disabled_at FROM yt_keys WHERE key = ?",
                     (safe_yt_key,),
                 ).fetchone()
                 if not key_row:
                     raise YtKeyInvalidError("Key YT không tồn tại hoặc đã bị thu hồi.")
+                if key_row["disabled_at"]:
+                    raise YtKeyDisabledError("Key YT này đang bị vô hiệu hóa.")
                 if key_row["used_at"]:
                     raise YtKeyUsedError("Key YT này đã được dùng.")
 
@@ -868,7 +881,15 @@ def get_admin_yt_keys_from_db(limit: int = 200) -> list[dict]:
     try:
         rows = conn.execute(
             """
-            SELECT key, created_at, created_by_ip, used_at, used_by_ip, used_job_id
+            SELECT
+              key,
+              created_at,
+              created_by_ip,
+              used_at,
+              used_by_ip,
+              used_job_id,
+              disabled_at,
+              disabled_by_ip
             FROM yt_keys
             ORDER BY created_at DESC, key DESC
             LIMIT ?
@@ -889,9 +910,78 @@ def get_admin_yt_keys_from_db(limit: int = 200) -> list[dict]:
                 "usedAt": row["used_at"],
                 "usedByIp": row["used_by_ip"],
                 "usedJobId": row["used_job_id"],
+                "disabled": bool(row["disabled_at"]),
+                "disabledAt": row["disabled_at"],
+                "disabledByIp": row["disabled_by_ip"],
             }
         )
     return items
+
+
+def set_yt_key_disabled_in_db(raw_key: str, disabled: bool, actor_ip: str) -> dict:
+    safe_key = normalize_yt_key(raw_key)
+    if not is_valid_yt_key_format(safe_key):
+        raise YtKeyInvalidError("Key YT không hợp lệ. Key phải gồm 6 ký tự A-Z và 0-9.")
+    if safe_key in YT_UNLIMITED_KEYS:
+        raise YtKeyInvalidError("Key hệ thống vô hạn không hỗ trợ bật/tắt.")
+
+    safe_actor_ip = (actor_ip or "admin").strip() or "admin"
+    conn = db_conn()
+    try:
+        conn.execute("BEGIN IMMEDIATE")
+        row = conn.execute(
+            """
+            SELECT key, used_at, disabled_at
+            FROM yt_keys
+            WHERE key = ?
+            """,
+            (safe_key,),
+        ).fetchone()
+        if not row:
+            raise YtKeyInvalidError("Không tìm thấy key YT này.")
+
+        now = now_iso()
+        if disabled:
+            conn.execute(
+                """
+                UPDATE yt_keys
+                SET disabled_at = ?, disabled_by_ip = ?
+                WHERE key = ?
+                """,
+                (now, safe_actor_ip, safe_key),
+            )
+        else:
+            conn.execute(
+                """
+                UPDATE yt_keys
+                SET disabled_at = NULL, disabled_by_ip = NULL
+                WHERE key = ?
+                """,
+                (safe_key,),
+            )
+
+        updated = conn.execute(
+            """
+            SELECT key, used_at, disabled_at, disabled_by_ip
+            FROM yt_keys
+            WHERE key = ?
+            """,
+            (safe_key,),
+        ).fetchone()
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
+
+    return {
+        "key": updated["key"],
+        "used": bool(updated["used_at"]),
+        "disabled": bool(updated["disabled_at"]),
+        "disabledAt": updated["disabled_at"],
+        "disabledByIp": updated["disabled_by_ip"],
+    }
 
 
 def get_job_from_db(job_id: str) -> Optional[dict]:
@@ -1059,8 +1149,9 @@ def get_admin_stats_from_db() -> dict:
             """
             SELECT
               COUNT(*) AS total_count,
-              SUM(CASE WHEN used_at IS NULL THEN 1 ELSE 0 END) AS available_count,
-              SUM(CASE WHEN used_at IS NOT NULL THEN 1 ELSE 0 END) AS used_count
+              SUM(CASE WHEN used_at IS NULL AND disabled_at IS NULL THEN 1 ELSE 0 END) AS available_count,
+              SUM(CASE WHEN used_at IS NOT NULL THEN 1 ELSE 0 END) AS used_count,
+              SUM(CASE WHEN used_at IS NULL AND disabled_at IS NOT NULL THEN 1 ELSE 0 END) AS disabled_count
             FROM yt_keys
             """
         ).fetchone()
@@ -1074,6 +1165,7 @@ def get_admin_stats_from_db() -> dict:
     yt_key_total = int((yt_key_metrics["total_count"] if yt_key_metrics else 0) or 0)
     yt_key_available = int((yt_key_metrics["available_count"] if yt_key_metrics else 0) or 0)
     yt_key_used = int((yt_key_metrics["used_count"] if yt_key_metrics else 0) or 0)
+    yt_key_disabled = int((yt_key_metrics["disabled_count"] if yt_key_metrics else 0) or 0)
 
     return {
         "totalRequests": int(totals["total_requests"] or 0),
@@ -1092,6 +1184,7 @@ def get_admin_stats_from_db() -> dict:
         "ytKeyTotalCount": yt_key_total,
         "ytKeyAvailableCount": yt_key_available,
         "ytKeyUsedCount": yt_key_used,
+        "ytKeyDisabledCount": yt_key_disabled,
     }
 
 
@@ -1448,6 +1541,28 @@ async def admin_generate_yt_keys(payload: AdminGenerateYtKeysRequest, request: R
     }
 
 
+@app.post("/api/admin/yt-keys/{yt_key}/disable")
+async def admin_disable_yt_key(yt_key: str, request: Request) -> dict:
+    require_admin_session(request)
+    ip = client_ip_from_request(request)
+    try:
+        item = await asyncio.to_thread(set_yt_key_disabled_in_db, yt_key, True, ip)
+    except YtKeyInvalidError as err:
+        raise HTTPException(status_code=400, detail=str(err)) from err
+    return {"ok": True, "item": item}
+
+
+@app.post("/api/admin/yt-keys/{yt_key}/enable")
+async def admin_enable_yt_key(yt_key: str, request: Request) -> dict:
+    require_admin_session(request)
+    ip = client_ip_from_request(request)
+    try:
+        item = await asyncio.to_thread(set_yt_key_disabled_in_db, yt_key, False, ip)
+    except YtKeyInvalidError as err:
+        raise HTTPException(status_code=400, detail=str(err)) from err
+    return {"ok": True, "item": item}
+
+
 @app.get("/api/health")
 async def health() -> dict:
     return {"ok": True, "time": now_iso()}
@@ -1523,6 +1638,8 @@ async def create_job(payload: CreateJobRequest, request: Request) -> dict:
         raise HTTPException(status_code=400, detail=str(err)) from err
     except YtKeyInvalidError as err:
         raise HTTPException(status_code=400, detail=str(err)) from err
+    except YtKeyDisabledError as err:
+        raise HTTPException(status_code=409, detail=str(err)) from err
     except YtKeyUsedError as err:
         raise HTTPException(status_code=409, detail=str(err)) from err
 

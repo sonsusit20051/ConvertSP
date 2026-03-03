@@ -257,6 +257,32 @@
       border-color: #ffd0d0;
       background: #fff2f2;
     }
+    .key-badge.disabled {
+      color: #7c5a1a;
+      border-color: #f0d7a6;
+      background: #fff8ea;
+    }
+    .key-action-btn {
+      height: 30px;
+      padding: 0 10px;
+      border-radius: 8px;
+      font-size: 12px;
+      font-weight: 800;
+      border: 1px solid #c9d7f9;
+      background: #eef3ff;
+      color: #28458b;
+      cursor: pointer;
+    }
+    .key-action-btn.disable {
+      border-color: #ffd0d0;
+      background: #fff2f2;
+      color: #b22d2d;
+    }
+    .key-action-btn.enable {
+      border-color: #bee7ca;
+      background: #eefdf3;
+      color: #16673a;
+    }
 
     @media (max-width: 1100px) {
       .stats { grid-template-columns: repeat(3, minmax(0, 1fr)); }
@@ -306,6 +332,7 @@
           <div class="stat"><div class="k">YT key tổng</div><div id="stYtKeyTotal" class="v">0</div></div>
           <div class="stat"><div class="k">YT key còn dùng</div><div id="stYtKeyAvailable" class="v">0</div></div>
           <div class="stat"><div class="k">YT key đã dùng</div><div id="stYtKeyUsed" class="v">0</div></div>
+          <div class="stat"><div class="k">YT key bị khóa</div><div id="stYtKeyDisabled" class="v">0</div></div>
         </section>
 
         <section class="key-panel">
@@ -328,6 +355,7 @@
                   <th style="width: 170px;">Dùng lúc</th>
                   <th style="width: 95px;">IP dùng</th>
                   <th>Job</th>
+                  <th style="width: 120px;">Thao tác</th>
                 </tr>
               </thead>
               <tbody id="ytKeyRows"></tbody>
@@ -381,6 +409,7 @@
       const stYtKeyTotal = document.getElementById("stYtKeyTotal");
       const stYtKeyAvailable = document.getElementById("stYtKeyAvailable");
       const stYtKeyUsed = document.getElementById("stYtKeyUsed");
+      const stYtKeyDisabled = document.getElementById("stYtKeyDisabled");
       const ytKeyCount = document.getElementById("ytKeyCount");
       const btnGenYtKeys = document.getElementById("btnGenYtKeys");
       const btnRefreshYtKeys = document.getElementById("btnRefreshYtKeys");
@@ -481,7 +510,7 @@
         ytKeyRows.innerHTML = "";
         if (!items || items.length === 0) {
           const tr = document.createElement("tr");
-          tr.innerHTML = '<td colspan="7">Chưa có key YT.</td>';
+          tr.innerHTML = '<td colspan="8">Chưa có key YT.</td>';
           ytKeyRows.appendChild(tr);
           return;
         }
@@ -489,18 +518,37 @@
         for (const item of items) {
           const key = item.key || "";
           const used = Boolean(item.used);
+          const disabled = Boolean(item.disabled);
           const usedAt = item.usedAt || "-";
           const usedByIp = item.usedByIp || "-";
           const usedJobId = item.usedJobId || "-";
+          let statusClass = "available";
+          let statusLabel = "available";
+          if (used) {
+            statusClass = "used";
+            statusLabel = "used";
+          } else if (disabled) {
+            statusClass = "disabled";
+            statusLabel = "disabled";
+          }
+
+          let actionHtml = "-";
+          if (!used) {
+            const action = disabled ? "enable" : "disable";
+            const label = disabled ? "Kích hoạt" : "Vô hiệu";
+            actionHtml = `<button class="key-action-btn ${action}" data-key="${key}" data-action="${action}" type="button">${label}</button>`;
+          }
+
           const tr = document.createElement("tr");
           tr.innerHTML = `
             <td><b>${key}</b></td>
-            <td><span class="key-badge ${used ? "used" : "available"}">${used ? "used" : "available"}</span></td>
+            <td><span class="key-badge ${statusClass}">${statusLabel}</span></td>
             <td>${item.createdAt || "-"}</td>
             <td>${item.createdByIp || "-"}</td>
             <td>${usedAt}</td>
             <td>${usedByIp}</td>
             <td>${usedJobId}</td>
+            <td>${actionHtml}</td>
           `;
           ytKeyRows.appendChild(tr);
         }
@@ -521,6 +569,7 @@
         setText(stYtKeyTotal, stats.ytKeyTotalCount || 0);
         setText(stYtKeyAvailable, stats.ytKeyAvailableCount || 0);
         setText(stYtKeyUsed, stats.ytKeyUsedCount || 0);
+        setText(stYtKeyDisabled, stats.ytKeyDisabledCount || 0);
       }
 
       async function loadDashboardData() {
@@ -627,6 +676,31 @@
           setMessage(dashMsg, err.message || "Tạo key YT thất bại.", "err");
         } finally {
           btnGenYtKeys.disabled = false;
+        }
+      });
+
+      ytKeyRows.addEventListener("click", async (evt) => {
+        const target = evt.target;
+        if (!target || !target.matches(".key-action-btn")) return;
+
+        const key = String(target.getAttribute("data-key") || "").trim();
+        const action = String(target.getAttribute("data-action") || "").trim();
+        if (!key || !action) return;
+
+        const endpoint = action === "enable"
+          ? `/api/admin/yt-keys/${encodeURIComponent(key)}/enable`
+          : `/api/admin/yt-keys/${encodeURIComponent(key)}/disable`;
+
+        target.disabled = true;
+        setMessage(dashMsg, "");
+        try {
+          await api(endpoint, { method: "POST" });
+          await loadDashboardData();
+          setMessage(dashMsg, `${action === "enable" ? "Đã kích hoạt" : "Đã vô hiệu"} key ${key}.`, "ok");
+        } catch (err) {
+          setMessage(dashMsg, err.message || "Cập nhật trạng thái key thất bại.", "err");
+        } finally {
+          target.disabled = false;
         }
       });
 

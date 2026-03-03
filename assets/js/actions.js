@@ -339,13 +339,114 @@
     waitTicker = setInterval(render, 1000);
   }
 
+  function sanitizeYtKey(value) {
+    return validators.normalizeYtKey(value).replace(/[^A-Z0-9]/g, "").slice(0, 6);
+  }
+
   function requestYtKeyByPopup() {
-    const entered = window.prompt("Cần key admin cấp để Convert link", "") || "";
-    const key = validators.normalizeYtKey(entered).replace(/[^A-Z0-9]/g, "").slice(0, 6);
-    if (!key) {
-      throw new Error("Bạn chưa nhập key YT.");
+    if (
+      !dom
+      || !dom.ytKeyModal
+      || !dom.ytKeyModalInput
+      || !dom.ytKeyModalError
+      || !dom.ytKeyModalCancel
+      || !dom.ytKeyModalConfirm
+      || !dom.ytKeyModalBackdrop
+    ) {
+      const entered = window.prompt("Cần key admin cấp để Convert link", "") || "";
+      const key = sanitizeYtKey(entered);
+      if (!key) {
+        throw new Error("Bạn chưa nhập key YT.");
+      }
+      return Promise.resolve(validators.validateYtKey(key));
     }
-    return validators.validateYtKey(key);
+
+    return new Promise((resolve, reject) => {
+      const modal = dom.ytKeyModal;
+      const input = dom.ytKeyModalInput;
+      const errorEl = dom.ytKeyModalError;
+      const btnCancel = dom.ytKeyModalCancel;
+      const btnConfirm = dom.ytKeyModalConfirm;
+      const backdrop = dom.ytKeyModalBackdrop;
+      const previousOverflow = document.body.style.overflow;
+
+      let closed = false;
+
+      const cleanup = () => {
+        input.removeEventListener("input", onInput);
+        input.removeEventListener("keydown", onInputKeyDown);
+        btnCancel.removeEventListener("click", onCancel);
+        btnConfirm.removeEventListener("click", onConfirm);
+        backdrop.removeEventListener("click", onCancel);
+        document.removeEventListener("keydown", onEsc, true);
+      };
+
+      const closeModal = () => {
+        if (closed) return;
+        closed = true;
+        cleanup();
+        modal.classList.add("hidden");
+        modal.setAttribute("aria-hidden", "true");
+        document.body.style.overflow = previousOverflow;
+      };
+
+      const onInput = () => {
+        const next = sanitizeYtKey(input.value || "");
+        if (input.value !== next) input.value = next;
+        errorEl.textContent = "";
+      };
+
+      const submit = () => {
+        const key = sanitizeYtKey(input.value || "");
+        try {
+          const validKey = validators.validateYtKey(key);
+          closeModal();
+          resolve(validKey);
+        } catch (err) {
+          errorEl.textContent = (err && err.message) || "Key không hợp lệ.";
+        }
+      };
+
+      const onConfirm = (evt) => {
+        evt.preventDefault();
+        submit();
+      };
+
+      const onCancel = (evt) => {
+        if (evt) evt.preventDefault();
+        closeModal();
+        reject(new Error("Bạn chưa nhập key YT."));
+      };
+
+      const onInputKeyDown = (evt) => {
+        if (evt.key === "Enter") {
+          evt.preventDefault();
+          submit();
+        }
+      };
+
+      const onEsc = (evt) => {
+        if (evt.key === "Escape") {
+          evt.preventDefault();
+          onCancel(evt);
+        }
+      };
+
+      modal.classList.remove("hidden");
+      modal.setAttribute("aria-hidden", "false");
+      input.value = "";
+      errorEl.textContent = "";
+      document.body.style.overflow = "hidden";
+
+      input.addEventListener("input", onInput);
+      input.addEventListener("keydown", onInputKeyDown);
+      btnCancel.addEventListener("click", onCancel);
+      btnConfirm.addEventListener("click", onConfirm);
+      backdrop.addEventListener("click", onCancel);
+      document.addEventListener("keydown", onEsc, true);
+
+      setTimeout(() => input.focus(), 0);
+    });
   }
 
   async function handlePasteFromClipboard() {
@@ -411,7 +512,7 @@
     let ytKey = "";
     try {
       if (isYoutubeMode) {
-        ytKey = requestYtKeyByPopup();
+        ytKey = await requestYtKeyByPopup();
       }
 
       cleaned = validators.normalizeSingleShopeeLink(raw);
@@ -474,6 +575,13 @@
   async function handleCopy() {
     ui.setStatus("");
     const lastFull = state.getLastFull();
+    const source = state.getSource ? state.getSource() : "fb";
+    const isYoutubeMode = String(source || "fb").toLowerCase() === "yt";
+
+    if (isYoutubeMode) {
+      ui.setStatus("Luồng Youtube chỉ hỗ trợ nút Mua ngay.");
+      return;
+    }
 
     if (!lastFull) {
       ui.setStatus("Chưa có link. Hãy bấm “Nhận voucher” trước.");

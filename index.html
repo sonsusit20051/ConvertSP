@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>Convert Link Shopee</title>
   <link rel="icon" type="image/png" href="favicon.png?v=20260301.5" />
-  <link rel="stylesheet" href="assets/css/styles.css?v=20260304.1" />
+  <link rel="stylesheet" href="assets/css/styles.css?v=20260304.3" />
 </head>
 <body>
   <main class="page">
@@ -77,14 +77,46 @@
     </span>
   </div>
 
+  <div id="ytKeyModal" class="yt-key-modal hidden" aria-hidden="true">
+    <div id="ytKeyModalBackdrop" class="yt-key-backdrop"></div>
+    <div class="yt-key-dialog" role="dialog" aria-modal="true" aria-labelledby="ytKeyModalTitle">
+      <h3 id="ytKeyModalTitle" class="yt-key-title">Nhập key Youtube</h3>
+      <p class="yt-key-text">Cần key admin cấp để Convert link</p>
+      <input
+        id="ytKeyModalInput"
+        class="yt-key-field"
+        maxlength="6"
+        autocomplete="off"
+        autocapitalize="characters"
+        autocorrect="off"
+        spellcheck="false"
+        placeholder="Ví dụ: A1B2C3"
+      />
+      <p id="ytKeyModalError" class="yt-key-error"></p>
+      <a
+        id="ytKeyModalContact"
+        class="yt-key-contact"
+        href="https://zalo.me/0353025356"
+        target="_blank"
+        rel="noopener noreferrer"
+      >
+        Liên hệ ADMIN
+      </a>
+      <div class="yt-key-actions">
+        <button id="ytKeyModalCancel" type="button" class="yt-key-btn">Hủy</button>
+        <button id="ytKeyModalConfirm" type="button" class="yt-key-btn yt-key-btn-primary">Xác nhận</button>
+      </div>
+    </div>
+  </div>
+
   <script defer src="assets/js/config.js?v=20260303.11"></script>
-  <script defer src="assets/js/dom.js?v=20260304.2"></script>
+  <script defer src="assets/js/dom.js?v=20260304.3"></script>
   <script defer src="assets/js/state.js?v=20260303.10"></script>
-  <script defer src="assets/js/ui.js?v=20260304.2"></script>
+  <script defer src="assets/js/ui.js?v=20260304.3"></script>
   <script defer src="assets/js/validators.js?v=20260304.1"></script>
   <script defer src="assets/js/clipboard.js?v=20260303.10"></script>
   <script defer src="assets/js/api.js?v=20260304.1"></script>
-  <script defer src="assets/js/actions.js?v=20260304.2"></script>
-  <script defer src="assets/js/bootstrap.js?v=20260304.2"></script>
+  <script defer src="assets/js/actions.js?v=20260304.3"></script>
+  <script defer src="assets/js/bootstrap.js?v=20260304.3"></script>
 </body>
 </html>
