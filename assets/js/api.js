@@ -100,23 +100,6 @@
 
   async function createJob(rawUrl, source) {
     const normalizedSource = String(source || "fb").toLowerCase() === "yt" ? "yt" : "fb";
-    if (normalizedSource === "fb") {
-      try {
-        const availabilityRes = await fetchWithTimeout(`${cfg.BACKEND_BASE_URL}/api/worker/availability`, {
-          cache: "no-store"
-        });
-        const availabilityData = await parseJsonSafe(availabilityRes);
-        if (availabilityRes.ok && availabilityData && availabilityData.online === false) {
-          throw new Error("Extension worker đang offline, chuyển ngay sang luồng 2.");
-        }
-      } catch (err) {
-        const msg = String((err && err.message) || "");
-        if (msg.includes("offline")) {
-          throw err;
-        }
-      }
-    }
-
     const res = await fetchWithTimeout(`${cfg.BACKEND_BASE_URL}/api/jobs`, {
       method: "POST",
       cache: "no-store",
@@ -161,8 +144,8 @@
 
   async function waitForJob(jobId) {
     const deadline = Date.now() + cfg.JOB_TIMEOUT_MS;
-    const pickupDeadline = Date.now() + Math.max(1000, Number(cfg.JOB_PENDING_PICKUP_TIMEOUT_MS) || 10000);
-    const processingTimeoutMs = Math.max(1000, Number(cfg.JOB_PROCESSING_TIMEOUT_MS) || 10000);
+    const pickupDeadline = Date.now() + Math.max(1000, Number(cfg.JOB_PENDING_PICKUP_TIMEOUT_MS) || 5000);
+    const processingTimeoutMs = Math.max(1000, Number(cfg.JOB_PROCESSING_TIMEOUT_MS) || 5000);
     let processingStartedAt = 0;
 
     while (Date.now() < deadline) {
@@ -183,7 +166,7 @@
       if (status === "processing") {
         if (!processingStartedAt) processingStartedAt = Date.now();
         if (Date.now() - processingStartedAt >= processingTimeoutMs) {
-          throw new Error("Job processing quá 10s, chuyển luồng 2.");
+          throw new Error("Job processing quá 5s, chuyển luồng 2.");
         }
       } else {
         processingStartedAt = 0;

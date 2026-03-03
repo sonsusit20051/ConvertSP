@@ -1090,13 +1090,6 @@ async def create_job(payload: CreateJobRequest, request: Request) -> dict:
         raise HTTPException(status_code=429, detail="Bạn thao tác quá nhanh, vui lòng thử lại sau.")
 
     source = normalize_source(payload.source)
-    if source == "fb":
-        availability = await asyncio.to_thread(get_worker_availability)
-        if not availability.get("online"):
-            raise HTTPException(
-                status_code=503,
-                detail="Extension worker đang offline, web sẽ chuyển sang luồng 2.",
-            )
 
     try:
         normalized = normalize_single_shopee_url(payload.url)
