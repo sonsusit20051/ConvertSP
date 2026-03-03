@@ -107,9 +107,22 @@
     return `${baseUrl}?${params.toString()}`;
   }
 
+  function isLocalValidationError(message) {
+    const text = String(message || "").toLowerCase();
+    return (
+      text.includes("chỉ cho phép 1 link")
+      || text.includes("chỉ dán đúng 1 link")
+      || text.includes("vui lòng dùng link http/https")
+      || text.includes("chỉ hỗ trợ link sản phẩm shopee hợp lệ")
+      || text.includes("thiếu url")
+      || text.includes("bạn chưa nhập link")
+    );
+  }
+
   function shouldUseFallbackForError(message, source) {
     if (String(source || "fb").toLowerCase() !== "fb") return false;
     const text = String(message || "").toLowerCase();
+    if (!text || isLocalValidationError(text)) return false;
     return (
       text.includes("quá thời gian chờ xử lý")
       || text.includes("backend phản hồi chậm quá")
@@ -120,6 +133,13 @@
       || text.includes("api không trả về afflink")
       || text.includes("shopee trả failcode")
       || text.includes("graphql trả lỗi")
+      || text.includes("hệ thống đang quá tải")
+      || text.includes("backend không trả về jobid")
+      || text.includes("http 429")
+      || text.includes("http 503")
+      || text.includes("http 500")
+      || text.includes("không thể xử lý yêu cầu")
+      || text.includes("failed to fetch")
     );
   }
 
@@ -281,6 +301,7 @@
           ui.setStatus("Lỗi gọi API từ extension, đã chuyển sang link dự phòng FB.");
           return;
         }
+        ui.setStatus("Không tạo được link dự phòng từ input này. Hãy dán link sản phẩm Shopee rõ shop_id/item_id.");
       }
 
       ui.resetGenerated();
