@@ -1,0 +1,455 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Admin - Shopee Converter</title>
+  <style>
+    :root {
+      --bg: #f3f5fa;
+      --card: #ffffff;
+      --line: #dbe2f1;
+      --text: #1d2b49;
+      --muted: #5e6e92;
+      --accent: #2248e0;
+      --danger: #bd2e2e;
+      --ok: #1e7d4b;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: "Segoe UI", Tahoma, Arial, sans-serif;
+      color: var(--text);
+      background:
+        radial-gradient(900px 500px at 10% 0%, #ffffff 0%, transparent 60%),
+        linear-gradient(180deg, #eef2f9, var(--bg));
+      min-height: 100vh;
+    }
+    .wrap {
+      max-width: 1180px;
+      margin: 0 auto;
+      padding: 18px;
+    }
+    .card {
+      background: var(--card);
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      box-shadow: 0 14px 28px rgba(20, 30, 60, 0.08);
+      padding: 16px;
+    }
+    .hidden { display: none !important; }
+
+    .login-shell {
+      min-height: 100vh;
+      display: grid;
+      place-items: center;
+      padding: 18px;
+    }
+    .login-box {
+      width: min(460px, 100%);
+      background: var(--card);
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      box-shadow: 0 18px 42px rgba(21, 33, 72, 0.12);
+      padding: 22px;
+    }
+    .login-title {
+      margin: 0 0 8px;
+      font-size: 28px;
+      font-weight: 800;
+    }
+    .hint {
+      color: var(--muted);
+      margin-bottom: 14px;
+      font-size: 14px;
+    }
+    .row {
+      display: flex;
+      gap: 10px;
+      align-items: center;
+      flex-wrap: wrap;
+    }
+    input[type="password"] {
+      width: 100%;
+      height: 44px;
+      border-radius: 10px;
+      border: 1px solid var(--line);
+      padding: 0 12px;
+      font-size: 16px;
+    }
+    button {
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      background: #fff;
+      color: var(--text);
+      cursor: pointer;
+      font-weight: 700;
+      height: 40px;
+      padding: 0 14px;
+    }
+    button.primary {
+      background: var(--accent);
+      border-color: var(--accent);
+      color: #fff;
+    }
+    button:disabled {
+      opacity: 0.6;
+      cursor: not-allowed;
+    }
+
+    .topbar {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 12px;
+    }
+    h1 {
+      margin: 0;
+      font-size: clamp(24px, 3vw, 36px);
+      line-height: 1.1;
+    }
+
+    .stats {
+      display: grid;
+      grid-template-columns: repeat(8, minmax(0, 1fr));
+      gap: 10px;
+      margin-bottom: 12px;
+    }
+    .stat {
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      padding: 10px;
+      background: #fbfcff;
+    }
+    .stat .k {
+      color: var(--muted);
+      font-size: 12px;
+      margin-bottom: 4px;
+    }
+    .stat .v {
+      font-size: 26px;
+      font-weight: 800;
+      line-height: 1;
+    }
+
+    .msg {
+      margin-top: 10px;
+      font-size: 14px;
+      min-height: 1.2em;
+    }
+    .msg.err { color: var(--danger); }
+    .msg.ok { color: var(--ok); }
+
+    .table-wrap {
+      overflow: auto;
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      background: #fff;
+      max-height: calc(100vh - 260px);
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      min-width: 1100px;
+    }
+    th, td {
+      border-bottom: 1px solid #edf1f8;
+      text-align: left;
+      vertical-align: top;
+      padding: 8px 10px;
+      font-size: 13px;
+      line-height: 1.35;
+      word-break: break-word;
+    }
+    th {
+      position: sticky;
+      top: 0;
+      background: #f7f9fe;
+      z-index: 1;
+      font-size: 12px;
+      color: #4f6188;
+    }
+    .status {
+      display: inline-block;
+      border-radius: 999px;
+      padding: 2px 8px;
+      font-size: 12px;
+      font-weight: 700;
+      border: 1px solid #d8dfef;
+      background: #f6f8fd;
+      color: #2f3f64;
+      text-transform: lowercase;
+    }
+    .src {
+      display: inline-block;
+      border-radius: 999px;
+      padding: 2px 8px;
+      font-size: 12px;
+      font-weight: 800;
+      border: 1px solid #d8dfef;
+      text-transform: uppercase;
+    }
+    .src.fb {
+      background: #eef4ff;
+      border-color: #c5d4ff;
+      color: #2248e0;
+    }
+    .src.yt {
+      background: #fff1f1;
+      border-color: #ffcccc;
+      color: #bd2e2e;
+    }
+
+    @media (max-width: 1100px) {
+      .stats { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+    }
+    @media (max-width: 760px) {
+      .stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .topbar { flex-direction: column; align-items: flex-start; }
+    }
+  </style>
+</head>
+<body>
+  <section id="loginView" class="login-shell">
+    <div class="login-box">
+      <h2 class="login-title">Admin Login</h2>
+      <div class="hint">Nhập key để truy cập dashboard admin.</div>
+      <input id="adminKey" type="password" placeholder="Nhập key admin" autocomplete="off" />
+      <div class="row" style="margin-top: 10px;">
+        <button id="btnLogin" class="primary" type="button">Đăng nhập</button>
+      </div>
+      <div id="loginMsg" class="msg"></div>
+    </div>
+  </section>
+
+  <main id="dashboardView" class="hidden">
+    <div class="wrap">
+      <div class="card">
+        <div class="topbar">
+          <h1>Admin Dashboard</h1>
+          <div class="row">
+            <button id="btnRefresh" type="button">Làm mới</button>
+            <button id="btnLogout" type="button">Đăng xuất</button>
+          </div>
+        </div>
+
+        <section class="stats">
+          <div class="stat"><div class="k">Tổng request</div><div id="stTotal" class="v">0</div></div>
+          <div class="stat"><div class="k">Hôm nay (UTC)</div><div id="stToday" class="v">0</div></div>
+          <div class="stat"><div class="k">24 giờ qua</div><div id="st24h" class="v">0</div></div>
+          <div class="stat"><div class="k">Nguồn FB</div><div id="stSourceFb" class="v">0</div></div>
+          <div class="stat"><div class="k">Nguồn YT</div><div id="stSourceYt" class="v">0</div></div>
+          <div class="stat"><div class="k">Pending</div><div id="stPending" class="v">0</div></div>
+          <div class="stat"><div class="k">Done</div><div id="stDone" class="v">0</div></div>
+          <div class="stat"><div class="k">Failed</div><div id="stFailed" class="v">0</div></div>
+        </section>
+
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th style="width: 170px;">Thời gian</th>
+                <th style="width: 95px;">IP</th>
+                <th style="width: 80px;">Nguồn</th>
+                <th style="width: 90px;">Trạng thái</th>
+                <th>Input</th>
+                <th>Output</th>
+              </tr>
+            </thead>
+            <tbody id="rows"></tbody>
+          </table>
+        </div>
+        <div id="dashMsg" class="msg"></div>
+      </div>
+    </div>
+  </main>
+
+  <script>
+    (function () {
+      const loginView = document.getElementById("loginView");
+      const dashboardView = document.getElementById("dashboardView");
+      const adminKey = document.getElementById("adminKey");
+      const btnLogin = document.getElementById("btnLogin");
+      const loginMsg = document.getElementById("loginMsg");
+      const btnRefresh = document.getElementById("btnRefresh");
+      const btnLogout = document.getElementById("btnLogout");
+      const rows = document.getElementById("rows");
+      const dashMsg = document.getElementById("dashMsg");
+
+      const stTotal = document.getElementById("stTotal");
+      const stToday = document.getElementById("stToday");
+      const st24h = document.getElementById("st24h");
+      const stSourceFb = document.getElementById("stSourceFb");
+      const stSourceYt = document.getElementById("stSourceYt");
+      const stPending = document.getElementById("stPending");
+      const stDone = document.getElementById("stDone");
+      const stFailed = document.getElementById("stFailed");
+
+      let pollTimer = null;
+
+      function setText(el, val) {
+        if (!el) return;
+        el.textContent = String(val == null ? "" : val);
+      }
+
+      function setMessage(el, text, kind) {
+        el.classList.remove("err", "ok");
+        if (!text) {
+          el.textContent = "";
+          return;
+        }
+        if (kind) el.classList.add(kind);
+        el.textContent = text;
+      }
+
+      function showLogin() {
+        loginView.classList.remove("hidden");
+        dashboardView.classList.add("hidden");
+        if (pollTimer) {
+          clearInterval(pollTimer);
+          pollTimer = null;
+        }
+      }
+
+      function showDashboard() {
+        loginView.classList.add("hidden");
+        dashboardView.classList.remove("hidden");
+      }
+
+      async function api(path, init) {
+        const res = await fetch(path, {
+          ...init,
+          credentials: "include",
+          headers: {
+            "Content-Type": "application/json",
+            ...(init && init.headers ? init.headers : {})
+          }
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          const msg = (data && data.error) || ("HTTP " + res.status);
+          throw new Error(msg);
+        }
+        return data;
+      }
+
+      function renderRows(items) {
+        rows.innerHTML = "";
+        if (!items || items.length === 0) {
+          const tr = document.createElement("tr");
+          tr.innerHTML = '<td colspan="6">Chưa có dữ liệu.</td>';
+          rows.appendChild(tr);
+          return;
+        }
+
+        for (const it of items) {
+          const src = String(it.source || "fb").toLowerCase() === "yt" ? "yt" : "fb";
+          const tr = document.createElement("tr");
+          tr.innerHTML = `
+            <td>${it.createdAt || "-"}</td>
+            <td>${it.ip || "unknown"}</td>
+            <td><span class="src ${src}">${src}</span></td>
+            <td><span class="status">${it.status || "-"}</span></td>
+            <td>${it.inputUrl || ""}</td>
+            <td>${it.outputUrl || ""}</td>
+          `;
+          rows.appendChild(tr);
+        }
+      }
+
+      function renderStats(stats) {
+        setText(stTotal, stats.totalRequests || 0);
+        setText(stToday, stats.todayRequests || 0);
+        setText(st24h, stats.last24hRequests || 0);
+        setText(stSourceFb, stats.sourceFbCount || 0);
+        setText(stSourceYt, stats.sourceYtCount || 0);
+        setText(stPending, stats.pendingCount || 0);
+        setText(stDone, stats.doneCount || 0);
+        setText(stFailed, stats.failedCount || 0);
+      }
+
+      async function loadDashboardData() {
+        const [statsRes, reqRes] = await Promise.all([
+          api("/api/admin/stats"),
+          api("/api/admin/requests?limit=300")
+        ]);
+        renderStats(statsRes.stats || {});
+        renderRows(reqRes.items || []);
+      }
+
+      async function ensureAuth() {
+        try {
+          await api("/api/admin/me");
+          showDashboard();
+          await loadDashboardData();
+          if (!pollTimer) {
+            pollTimer = setInterval(() => {
+              loadDashboardData().catch((err) => {
+                setMessage(dashMsg, err.message || "Không tải được dữ liệu.", "err");
+              });
+            }, 10000);
+          }
+        } catch (_) {
+          showLogin();
+        }
+      }
+
+      btnLogin.addEventListener("click", async () => {
+        const key = (adminKey.value || "").trim();
+        if (!key) {
+          setMessage(loginMsg, "Vui lòng nhập key.", "err");
+          return;
+        }
+
+        btnLogin.disabled = true;
+        setMessage(loginMsg, "");
+        try {
+          await api("/api/admin/login", {
+            method: "POST",
+            body: JSON.stringify({ key })
+          });
+          adminKey.value = "";
+          setMessage(loginMsg, "Đăng nhập thành công.", "ok");
+          await ensureAuth();
+        } catch (err) {
+          setMessage(loginMsg, err.message || "Đăng nhập thất bại.", "err");
+        } finally {
+          btnLogin.disabled = false;
+        }
+      });
+
+      adminKey.addEventListener("keydown", (evt) => {
+        if (evt.key === "Enter") {
+          evt.preventDefault();
+          btnLogin.click();
+        }
+      });
+
+      btnRefresh.addEventListener("click", async () => {
+        btnRefresh.disabled = true;
+        setMessage(dashMsg, "");
+        try {
+          await loadDashboardData();
+          setMessage(dashMsg, "Đã làm mới dữ liệu.", "ok");
+        } catch (err) {
+          setMessage(dashMsg, err.message || "Không tải được dữ liệu.", "err");
+        } finally {
+          btnRefresh.disabled = false;
+        }
+      });
+
+      btnLogout.addEventListener("click", async () => {
+        btnLogout.disabled = true;
+        try {
+          await api("/api/admin/logout", { method: "POST" });
+        } catch (_) {}
+        btnLogout.disabled = false;
+        showLogin();
+      });
+
+      ensureAuth();
+    })();
+  </script>
+</body>
+</html>

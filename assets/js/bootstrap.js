@@ -2,6 +2,9 @@
   const dom = window.ShopeeDom;
   const actions = window.ShopeeActions;
   const cfg = window.ShopeeConfig;
+  const state = window.ShopeeState;
+  const COMING_SOON_TEXT = "Đang làm sếp ơi, sắp xong rồii";
+  const DEFAULT_INPUT_PLACEHOLDER = "Dán link tại đây";
 
   function validateDom() {
     if (!dom.inp || !dom.btnPaste || !dom.btnConvert || !dom.btnCopy || !dom.btnOpen || !dom.resultPreview || !dom.status) {
@@ -16,6 +19,105 @@
     dom.btnOpen.addEventListener("click", actions.handleOpen);
     dom.inp.addEventListener("paste", actions.handleInputPaste);
     dom.inp.addEventListener("input", actions.handleInputChange);
+  }
+
+  function setFacebookModeUI() {
+    if (dom.btnModeFacebook) {
+      dom.btnModeFacebook.classList.add("is-active");
+      dom.btnModeFacebook.setAttribute("aria-pressed", "true");
+    }
+    if (dom.btnModeYoutube) {
+      dom.btnModeYoutube.classList.remove("is-active");
+      dom.btnModeYoutube.setAttribute("aria-pressed", "false");
+    }
+  }
+
+  function setYoutubeModeUI() {
+    if (dom.btnModeFacebook) {
+      dom.btnModeFacebook.classList.remove("is-active");
+      dom.btnModeFacebook.setAttribute("aria-pressed", "false");
+    }
+    if (dom.btnModeYoutube) {
+      dom.btnModeYoutube.classList.add("is-active");
+      dom.btnModeYoutube.setAttribute("aria-pressed", "true");
+    }
+  }
+
+  function setFacebookPanelState() {
+    if (state && typeof state.setSource === "function") {
+      state.setSource("fb");
+    }
+    if (dom.panel) {
+      dom.panel.classList.remove("yt-layout");
+    }
+    if (dom.ytOnlyMessage) {
+      dom.ytOnlyMessage.textContent = COMING_SOON_TEXT;
+    }
+    if (dom.inp) {
+      if (dom.inp.value === COMING_SOON_TEXT) {
+        dom.inp.value = "";
+      }
+      dom.inp.readOnly = false;
+      dom.inp.placeholder = DEFAULT_INPUT_PLACEHOLDER;
+    }
+    if (dom.btnPaste) {
+      dom.btnPaste.disabled = false;
+    }
+    if (dom.btnConvert) {
+      dom.btnConvert.disabled = false;
+    }
+    if (dom.status) {
+      dom.status.classList.remove("err");
+      dom.status.textContent = "Đang ở chế độ đổi mã Facebook.";
+    }
+  }
+
+  function setYoutubePanelState() {
+    if (state && typeof state.setSource === "function") {
+      state.setSource("yt");
+    }
+    if (dom.panel) {
+      dom.panel.classList.add("yt-layout");
+    }
+    if (dom.ytOnlyMessage) {
+      dom.ytOnlyMessage.textContent = COMING_SOON_TEXT;
+    }
+    if (dom.btnPaste) {
+      dom.btnPaste.disabled = true;
+    }
+    if (dom.btnConvert) {
+      dom.btnConvert.disabled = true;
+    }
+    if (dom.btnCopy) {
+      dom.btnCopy.disabled = true;
+      dom.btnCopy.classList.remove("is-ready");
+    }
+    if (dom.btnOpen) {
+      dom.btnOpen.disabled = true;
+      dom.btnOpen.classList.remove("is-ready");
+    }
+    if (dom.status) {
+      dom.status.classList.remove("err");
+      dom.status.textContent = "";
+    }
+  }
+
+  function bindModeEvents() {
+    setFacebookModeUI();
+    setFacebookPanelState();
+    if (dom.btnModeFacebook) {
+      dom.btnModeFacebook.addEventListener("click", () => {
+        setFacebookModeUI();
+        setFacebookPanelState();
+      });
+    }
+
+    if (dom.btnModeYoutube) {
+      dom.btnModeYoutube.addEventListener("click", () => {
+        setYoutubeModeUI();
+        setYoutubePanelState();
+      });
+    }
   }
 
   function restoreCachedInput() {
@@ -47,10 +149,9 @@
       throw new Error("Không tải được module actions.js.");
     }
     restoreCachedInput();
+    bindModeEvents();
     bindEvents();
-    if (dom.status) {
-      dom.status.textContent = `Sẵn sàng (v${(cfg && cfg.APP_VERSION) || "dev"})`;
-    }
+    setFacebookPanelState();
   }
 
   try {

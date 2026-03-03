@@ -98,12 +98,13 @@
     return res.json().catch(() => ({}));
   }
 
-  async function createJob(rawUrl) {
+  async function createJob(rawUrl, source) {
+    const normalizedSource = String(source || "fb").toLowerCase() === "yt" ? "yt" : "fb";
     const res = await fetchWithTimeout(`${cfg.BACKEND_BASE_URL}/api/jobs`, {
       method: "POST",
       cache: "no-store",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ url: rawUrl })
+      body: JSON.stringify({ url: rawUrl, source: normalizedSource })
     });
 
     const data = await parseJsonSafe(res);
@@ -162,8 +163,8 @@
     throw new Error("Quá thời gian chờ xử lý. Vui lòng thử lại.");
   }
 
-  async function convertViaBackend(rawUrl) {
-    const jobId = await createJob(rawUrl);
+  async function convertViaBackend(rawUrl, source) {
+    const jobId = await createJob(rawUrl, source);
     return waitForJob(jobId);
   }
 

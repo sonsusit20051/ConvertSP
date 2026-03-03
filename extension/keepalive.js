@@ -10,7 +10,9 @@
     lastInitError: null,
     offscreenSupported: Boolean(chrome.offscreen),
     offscreenActive: false,
-    lastKeepaliveTickAt: null
+    lastKeepaliveTickAt: null,
+    lastDashboardReloadAt: null,
+    lastDashboardReloadCount: 0
   };
 
   async function hasOffscreenDocument() {
@@ -43,10 +45,46 @@
     }
   }
 
-  function setupAlarm() {
+  function setupAlarms() {
     chrome.alarms.create(cfg.WORKER_ALARM, {
       periodInMinutes: cfg.WORKER_ALARM_MINUTES
     });
+
+    if (cfg.DASHBOARD_AUTO_RELOAD_ENABLED) {
+      chrome.alarms.create(cfg.DASHBOARD_RELOAD_ALARM, {
+        periodInMinutes: cfg.DASHBOARD_RELOAD_MINUTES
+      });
+    }
+  }
+
+  async function reloadAffiliateDashboardTabs(trigger) {
+    if (!cfg.DASHBOARD_AUTO_RELOAD_ENABLED) return;
+
+    const patterns = Array.isArray(cfg.DASHBOARD_RELOAD_URL_PATTERNS)
+      ? cfg.DASHBOARD_RELOAD_URL_PATTERNS
+      : [];
+    if (patterns.length === 0) return;
+
+    const tabs = await chrome.tabs.query({ url: patterns });
+    if (!tabs || tabs.length === 0) {
+      keepAliveStatus.lastDashboardReloadAt = new Date().toISOString();
+      keepAliveStatus.lastDashboardReloadCount = 0;
+      return;
+    }
+
+    let reloaded = 0;
+    for (const tab of tabs) {
+      if (!tab || typeof tab.id !== "number") continue;
+      try {
+        await chrome.tabs.reload(tab.id);
+        reloaded += 1;
+      } catch (err) {
+        console.warn("Dashboard reload warning:", trigger, tab.id, err);
+      }
+    }
+
+    keepAliveStatus.lastDashboardReloadAt = new Date().toISOString();
+    keepAliveStatus.lastDashboardReloadCount = reloaded;
   }
 
   function bindLifecycleHandlers() {
@@ -54,22 +92,30 @@
     lifecycleBound = true;
 
     chrome.runtime.onInstalled.addListener(() => {
-      setupAlarm();
+      setupAlarms();
       ensureOffscreenDocument().catch((err) => console.error("Offscreen init failed:", err));
       runner.runWorkerCycle("onInstalled").catch((err) => console.error("Worker init failed:", err));
     });
 
     chrome.runtime.onStartup.addListener(() => {
-      setupAlarm();
+      setupAlarms();
       ensureOffscreenDocument().catch((err) => console.error("Offscreen startup failed:", err));
       runner.runWorkerCycle("onStartup").catch((err) => console.error("Worker startup failed:", err));
     });
 
     chrome.alarms.onAlarm.addListener((alarm) => {
-      if (alarm.name !== cfg.WORKER_ALARM) return;
-      runner.runWorkerCycle("alarm").catch((err) => {
-        console.error("Worker alarm cycle failed:", err);
-      });
+      if (alarm.name === cfg.WORKER_ALARM) {
+        runner.runWorkerCycle("alarm").catch((err) => {
+          console.error("Worker alarm cycle failed:", err);
+        });
+        return;
+      }
+
+      if (cfg.DASHBOARD_AUTO_RELOAD_ENABLED && alarm.name === cfg.DASHBOARD_RELOAD_ALARM) {
+        reloadAffiliateDashboardTabs("dashboardAlarm").catch((err) => {
+          console.error("Dashboard auto-reload failed:", err);
+        });
+      }
     });
 
     chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
@@ -88,7 +134,7 @@
   async function initKeepAlive() {
     try {
       bindLifecycleHandlers();
-      setupAlarm();
+      setupAlarms();
       keepAliveStatus.initializedAt = new Date().toISOString();
       await ensureOffscreenDocument();
       keepAliveStatus.offscreenActive = await hasOffscreenDocument();

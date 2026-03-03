@@ -5,6 +5,10 @@
 
   window.ShopeeDom = {
     byId,
+    btnModeFacebook: byId("modeFb") || byId("btnModeFacebook"),
+    btnModeYoutube: byId("modeYt") || byId("btnModeYoutube"),
+    panel: byId("mainPanel"),
+    ytOnlyMessage: byId("ytOnlyMessage"),
     inp: byId("inp"),
     btnPaste: byId("btnPaste"),
     btnConvert: byId("btnConvert"),

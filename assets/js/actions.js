@@ -9,6 +9,81 @@
   let waitTicker = null;
   let cooldownTicker = null;
 
+  function pickFallbackAffiliateId() {
+    const ids = Array.isArray(cfg.FALLBACK_AFFILIATE_IDS) ? cfg.FALLBACK_AFFILIATE_IDS : [];
+    const normalized = ids
+      .map((id) => String(id || "").trim())
+      .filter(Boolean);
+    if (normalized.length === 0) return "";
+    const idx = Math.floor(Math.random() * normalized.length);
+    return normalized[idx];
+  }
+
+  function extractProductIdsFromPath(pathname) {
+    const value = String(pathname || "/");
+    let match = value.match(/-i\.(\d+)\.(\d+)\/?$/i);
+    if (match) return { shopId: match[1], itemId: match[2] };
+
+    match = value.match(/^\/product\/(\d+)\/(\d+)\/?$/i);
+    if (match) return { shopId: match[1], itemId: match[2] };
+
+    match = value.match(/^\/universal-link\/product\/(\d+)\/(\d+)\/?$/i);
+    if (match) return { shopId: match[1], itemId: match[2] };
+
+    return null;
+  }
+
+  function parseProductIds(urlText, depth) {
+    if (depth > 2) return null;
+    let parsed;
+    try {
+      parsed = new URL(String(urlText || "").trim());
+    } catch (_) {
+      return null;
+    }
+
+    const directIds = extractProductIdsFromPath(parsed.pathname || "/");
+    if (directIds) return directIds;
+
+    const originLinkRaw = parsed.searchParams ? parsed.searchParams.get("origin_link") : "";
+    if (!originLinkRaw) return null;
+
+    const fromRaw = parseProductIds(originLinkRaw, depth + 1);
+    if (fromRaw) return fromRaw;
+
+    try {
+      const decoded = decodeURIComponent(originLinkRaw);
+      return parseProductIds(decoded, depth + 1);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  function buildFallbackLink(inputUrl) {
+    const ids = parseProductIds(inputUrl, 0);
+    if (!ids || !ids.shopId || !ids.itemId) return "";
+
+    const affiliateId = pickFallbackAffiliateId();
+    if (!affiliateId) return "";
+
+    const subId = String(cfg.FALLBACK_SUB_ID || "cvweb").trim() || "cvweb";
+    const baseUrl = String(cfg.FALLBACK_REDIRECT_URL || "https://s.shopee.vn/an_redir").trim();
+    if (!baseUrl) return "";
+
+    const originLink = `https://shopee.vn/product/${ids.shopId}/${ids.itemId}`;
+    const params = new URLSearchParams({
+      origin_link: originLink,
+      affiliate_id: affiliateId,
+      sub_id: subId
+    });
+    return `${baseUrl}?${params.toString()}`;
+  }
+
+  function shouldUseFallbackForError(message) {
+    const text = String(message || "").toLowerCase();
+    return text.includes("quá thời gian chờ xử lý") || text.includes("backend phản hồi chậm quá");
+  }
+
   function getCooldownRemainingMs() {
     const until = Number(state.getConvertCooldownUntil()) || 0;
     return Math.max(0, until - Date.now());
@@ -126,8 +201,9 @@
       return;
     }
 
+    let cleaned = "";
     try {
-      const cleaned = validators.normalizeSingleShopeeLink(raw);
+      cleaned = validators.normalizeSingleShopeeLink(raw);
       saveInputCache(currentRawInput);
 
       // Bắt đầu lượt convert mới: xoá output cũ để tránh mở/copy nhầm link trước đó.
@@ -138,7 +214,8 @@
       ui.setResultPreview("Đang chuyển đổi...");
       ui.setStatus("Đang gửi yêu cầu convert...");
 
-      const jobId = await api.createJob(cleaned);
+      const source = state.getSource ? state.getSource() : "fb";
+      const jobId = await api.createJob(cleaned, source);
       const shortJobId = String(jobId || "").slice(0, 8);
       startWaitTicker(shortJobId);
 
@@ -156,6 +233,17 @@
     } catch (err) {
       stopWaitTicker();
       const message = (err && err.message) || "Không chuyển đổi được";
+
+      const enableFallback = cfg.FALLBACK_ON_EXTENSION_TIMEOUT !== false;
+      if (enableFallback && shouldUseFallbackForError(message)) {
+        const fallbackUrl = buildFallbackLink(cleaned || raw);
+        if (fallbackUrl) {
+          ui.setGenerated(fallbackUrl);
+          ui.setStatus("Không nhận được phản hồi từ extension, đã tạo link dự phòng.");
+          return;
+        }
+      }
+
       ui.resetGenerated();
       ui.setResultPreview(`Lỗi: ${message}`);
       ui.setStatus(message);

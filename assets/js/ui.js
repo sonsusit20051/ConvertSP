@@ -11,7 +11,12 @@
   }
 
   function setStatus(msg) {
-    dom.status.textContent = msg || "";
+    dom.status.textContent = msg || "Đang ở chế độ đổi mã Facebook.";
+  }
+
+  function setReadyButtons(ready) {
+    dom.btnCopy.classList.toggle("is-ready", Boolean(ready));
+    dom.btnOpen.classList.toggle("is-ready", Boolean(ready));
   }
 
   function setBusy(busy) {
@@ -21,11 +26,13 @@
     if (busy) {
       dom.btnCopy.disabled = true;
       dom.btnOpen.disabled = true;
+      setReadyButtons(false);
       return;
     }
     const hasOutput = Boolean(state.getLastFull());
     dom.btnCopy.disabled = !hasOutput;
     dom.btnOpen.disabled = !hasOutput;
+    setReadyButtons(hasOutput);
   }
 
   function resetGenerated() {
@@ -35,6 +42,7 @@
     dom.btnCopy.textContent = "Sao chép";
     dom.resultPreview.removeAttribute("title");
     setPreviewReady(false);
+    setReadyButtons(false);
   }
 
   function setInput(value) {
@@ -61,6 +69,7 @@
     setResultPreview(fullUrl);
     dom.resultPreview.setAttribute("title", fullUrl);
     setPreviewReady(true);
+    setReadyButtons(true);
   }
 
   function showCopySuccess() {

@@ -8,5 +8,15 @@ window.ShopeeConfig = {
   API_REQUEST_TIMEOUT_MS: 10000,
   URL_REGEX: /https?:\/\/[^\s\"'<>]+/gi,
   INPUT_CACHE_KEY: "shopee_converter_input_cache",
-  ENABLE_INPUT_CACHE: false
+  ENABLE_INPUT_CACHE: false,
+
+  // Fallback link khi backend/ext không phản hồi kịp.
+  FALLBACK_ON_EXTENSION_TIMEOUT: true,
+  FALLBACK_REDIRECT_URL: "https://s.shopee.vn/an_redir",
+  FALLBACK_AFFILIATE_IDS: [
+    "17322940169",
+    "17391540096",
+    "17397970458"
+  ],
+  FALLBACK_SUB_ID: "cvweb"
 };

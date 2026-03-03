@@ -83,6 +83,14 @@
     WORKER_ALARM: "poll-job-queue",
     WORKER_ALARM_MINUTES: 1,
 
+    // Auto reload tab dashboard affiliate để giữ phiên ổn định.
+    DASHBOARD_AUTO_RELOAD_ENABLED: true,
+    DASHBOARD_RELOAD_ALARM: "reload-affiliate-dashboard",
+    DASHBOARD_RELOAD_MINUTES: 3,
+    DASHBOARD_RELOAD_URL_PATTERNS: [
+      "https://affiliate.shopee.vn/dashboard*"
+    ],
+
     // Throughput tuning: each cycle can process multiple queued jobs.
     WORKER_MAX_BATCH: 15,
     // When queue is empty at cycle start, retry quickly to reduce pickup latency.

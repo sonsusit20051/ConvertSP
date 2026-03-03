@@ -22,13 +22,14 @@ import uuid
 from collections import deque
 from contextlib import asynccontextmanager
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 from typing import Deque, Dict, Optional
 from urllib.parse import parse_qsl, unquote, urlparse
 
 from fastapi import FastAPI, Header, HTTPException, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel, Field
 
 # -----------------------------
@@ -39,6 +40,9 @@ DB_PATH = os.environ.get("DB_PATH", "backend/jobs.db")
 HOST = os.environ.get("HOST", "0.0.0.0")
 PORT = int(os.environ.get("PORT", "8787"))
 WORKER_KEY = os.environ.get("WORKER_KEY", "change-me-worker-key")
+ADMIN_LOGIN_KEY = os.environ.get("ADMIN_LOGIN_KEY", "24092005")
+ADMIN_SESSION_TTL_SEC = int(os.environ.get("ADMIN_SESSION_TTL_SEC", "43200"))
+ADMIN_SESSION_COOKIE = "admin_session"
 
 MAX_PENDING_JOBS = int(os.environ.get("MAX_PENDING_JOBS", "2000"))
 MAX_URL_LENGTH = int(os.environ.get("MAX_URL_LENGTH", "2048"))
@@ -64,6 +68,8 @@ ALLOWED_ORIGIN_REGEX = os.environ.get(
 
 URL_REGEX = r"https?://[^\s\"'<>]+"
 MAX_REDIRECT_DEPTH = 2
+ADMIN_UI_PATH = Path(__file__).resolve().parent / "admin" / "index.html"
+ALLOWED_SOURCES = {"fb", "yt"}
 
 
 # -----------------------------
@@ -214,6 +220,13 @@ def normalize_single_shopee_url(raw_text: Optional[str]) -> str:
     return normalized
 
 
+def normalize_source(raw_source: Optional[str]) -> str:
+    candidate = (raw_source or "fb").strip().lower()
+    if candidate not in ALLOWED_SOURCES:
+        return "fb"
+    return candidate
+
+
 def client_ip_from_request(request: Request) -> str:
     xff = request.headers.get("x-forwarded-for", "")
     if xff:
@@ -231,6 +244,8 @@ def client_ip_from_request(request: Request) -> str:
 
 _RATE_LIMIT_STATE: Dict[str, Deque[float]] = {}
 _RATE_LIMIT_LOCK = threading.Lock()
+_ADMIN_SESSIONS: Dict[str, float] = {}
+_ADMIN_SESSIONS_LOCK = threading.Lock()
 
 
 def allow_user_request(ip: str) -> bool:
@@ -270,6 +285,47 @@ def cleanup_rate_limit_state() -> int:
     return removed
 
 
+def cleanup_admin_sessions() -> int:
+    now_ts = time.time()
+    removed = 0
+    with _ADMIN_SESSIONS_LOCK:
+        for session_id, expiry in list(_ADMIN_SESSIONS.items()):
+            if expiry <= now_ts:
+                del _ADMIN_SESSIONS[session_id]
+                removed += 1
+    return removed
+
+
+def create_admin_session() -> str:
+    cleanup_admin_sessions()
+    session_id = secrets.token_urlsafe(32)
+    expires_at = time.time() + max(300, ADMIN_SESSION_TTL_SEC)
+    with _ADMIN_SESSIONS_LOCK:
+        _ADMIN_SESSIONS[session_id] = expires_at
+    return session_id
+
+
+def is_admin_session_valid(session_id: str) -> bool:
+    if not session_id:
+        return False
+    cleanup_admin_sessions()
+    with _ADMIN_SESSIONS_LOCK:
+        expiry = _ADMIN_SESSIONS.get(session_id)
+        if not expiry:
+            return False
+        if expiry <= time.time():
+            del _ADMIN_SESSIONS[session_id]
+            return False
+    return True
+
+
+def delete_admin_session(session_id: str) -> None:
+    if not session_id:
+        return
+    with _ADMIN_SESSIONS_LOCK:
+        _ADMIN_SESSIONS.pop(session_id, None)
+
+
 # -----------------------------
 # SQLite helpers
 # -----------------------------
@@ -301,6 +357,8 @@ def init_db() -> None:
             CREATE TABLE IF NOT EXISTS jobs (
               id TEXT PRIMARY KEY,
               input_url TEXT NOT NULL,
+              source TEXT NOT NULL DEFAULT 'fb',
+              requester_ip TEXT NOT NULL DEFAULT 'unknown',
               output_url TEXT,
               status TEXT NOT NULL,
               error TEXT,
@@ -311,6 +369,11 @@ def init_db() -> None:
             )
             """
         )
+        cols = {row["name"] for row in conn.execute("PRAGMA table_info(jobs)").fetchall()}
+        if "source" not in cols:
+            conn.execute("ALTER TABLE jobs ADD COLUMN source TEXT NOT NULL DEFAULT 'fb'")
+        if "requester_ip" not in cols:
+            conn.execute("ALTER TABLE jobs ADD COLUMN requester_ip TEXT NOT NULL DEFAULT 'unknown'")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_jobs_status_created ON jobs(status, created_at)")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_jobs_created_at ON jobs(created_at)")
         conn.commit()
@@ -318,7 +381,7 @@ def init_db() -> None:
         conn.close()
 
 
-def create_job_in_db(input_url: str) -> str:
+def create_job_in_db(input_url: str, requester_ip: str, source: str) -> str:
     conn = db_conn()
     try:
         pending_count = conn.execute(
@@ -330,9 +393,10 @@ def create_job_in_db(input_url: str) -> str:
 
         job_id = str(uuid.uuid4())
         now = now_iso()
+        normalized_source = normalize_source(source)
         conn.execute(
-            "INSERT INTO jobs(id,input_url,status,created_at,updated_at) VALUES(?,?,?,?,?)",
-            (job_id, input_url, "pending", now, now),
+            "INSERT INTO jobs(id,input_url,source,requester_ip,status,created_at,updated_at) VALUES(?,?,?,?,?,?,?)",
+            (job_id, input_url, normalized_source, requester_ip or "unknown", "pending", now, now),
         )
         conn.commit()
         return job_id
@@ -344,7 +408,7 @@ def get_job_from_db(job_id: str) -> Optional[dict]:
     conn = db_conn()
     try:
         row = conn.execute(
-            "SELECT id,input_url,output_url,status,error,created_at,updated_at,finished_at FROM jobs WHERE id=?",
+            "SELECT id,input_url,source,output_url,status,error,created_at,updated_at,finished_at FROM jobs WHERE id=?",
             (job_id,),
         ).fetchone()
     finally:
@@ -356,6 +420,7 @@ def get_job_from_db(job_id: str) -> Optional[dict]:
     return {
         "jobId": row["id"],
         "inputUrl": row["input_url"],
+        "source": normalize_source(row["source"] if "source" in row.keys() else "fb"),
         "outputUrl": row["output_url"],
         "status": row["status"],
         "error": row["error"],
@@ -441,6 +506,93 @@ def cleanup_old_jobs() -> int:
         conn.close()
 
 
+def get_admin_stats_from_db() -> dict:
+    conn = db_conn()
+    try:
+        totals = conn.execute(
+            """
+            SELECT
+              COUNT(*) AS total_requests,
+              SUM(CASE WHEN status='pending' THEN 1 ELSE 0 END) AS pending_count,
+              SUM(CASE WHEN status='processing' THEN 1 ELSE 0 END) AS processing_count,
+              SUM(CASE WHEN status='done' THEN 1 ELSE 0 END) AS done_count,
+              SUM(CASE WHEN status='failed' THEN 1 ELSE 0 END) AS failed_count,
+              SUM(CASE WHEN source='fb' THEN 1 ELSE 0 END) AS source_fb_count,
+              SUM(CASE WHEN source='yt' THEN 1 ELSE 0 END) AS source_yt_count
+            FROM jobs
+            """
+        ).fetchone()
+
+        today_prefix = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+        today_requests = conn.execute(
+            "SELECT COUNT(*) AS c FROM jobs WHERE created_at LIKE ?",
+            (f"{today_prefix}%",),
+        ).fetchone()["c"]
+
+        last_24h_cutoff = (datetime.now(timezone.utc) - timedelta(hours=24)).replace(microsecond=0).isoformat()
+        last_24h_requests = conn.execute(
+            "SELECT COUNT(*) AS c FROM jobs WHERE created_at >= ?",
+            (last_24h_cutoff,),
+        ).fetchone()["c"]
+    finally:
+        conn.close()
+
+    return {
+        "totalRequests": int(totals["total_requests"] or 0),
+        "pendingCount": int(totals["pending_count"] or 0),
+        "processingCount": int(totals["processing_count"] or 0),
+        "doneCount": int(totals["done_count"] or 0),
+        "failedCount": int(totals["failed_count"] or 0),
+        "sourceFbCount": int(totals["source_fb_count"] or 0),
+        "sourceYtCount": int(totals["source_yt_count"] or 0),
+        "todayRequests": int(today_requests or 0),
+        "last24hRequests": int(last_24h_requests or 0),
+    }
+
+
+def get_admin_requests_from_db(limit: int = 200) -> list[dict]:
+    safe_limit = max(1, min(int(limit or 200), 1000))
+    conn = db_conn()
+    try:
+        rows = conn.execute(
+            """
+            SELECT
+              id,
+              input_url,
+              source,
+              output_url,
+              requester_ip,
+              status,
+              error,
+              created_at,
+              updated_at,
+              finished_at
+            FROM jobs
+            ORDER BY created_at DESC
+            LIMIT ?
+            """,
+            (safe_limit,),
+        ).fetchall()
+    finally:
+        conn.close()
+
+    return [
+        {
+            "jobId": row["id"],
+            "inputUrl": row["input_url"],
+            "source": normalize_source(row["source"] if "source" in row.keys() else "fb"),
+            "outputUrl": row["output_url"],
+            "ip": row["requester_ip"] or "unknown",
+            "status": row["status"],
+            "error": row["error"],
+            "createdAt": row["created_at"],
+            "updatedAt": row["updated_at"],
+            "finishedAt": row["finished_at"],
+        }
+        for row in rows
+    ]
+
+
 # -----------------------------
 # Pydantic models
 # -----------------------------
@@ -448,6 +600,7 @@ def cleanup_old_jobs() -> int:
 
 class CreateJobRequest(BaseModel):
     url: str = Field(..., description="Single Shopee URL")
+    source: Optional[str] = Field(default="fb", description="Traffic source: fb|yt")
 
 
 class WorkerCompleteRequest(BaseModel):
@@ -456,6 +609,10 @@ class WorkerCompleteRequest(BaseModel):
 
 class WorkerFailRequest(BaseModel):
     error: Optional[str] = None
+
+
+class AdminLoginRequest(BaseModel):
+    key: str = Field(..., min_length=1, max_length=128)
 
 
 # -----------------------------
@@ -549,6 +706,70 @@ def require_worker_key(x_worker_key: str = Header(default="", alias="X-Worker-Ke
         raise HTTPException(status_code=401, detail="Unauthorized worker.")
 
 
+def require_admin_session(request: Request) -> str:
+    session_id = (request.cookies.get(ADMIN_SESSION_COOKIE) or "").strip()
+    if not is_admin_session_valid(session_id):
+        raise HTTPException(status_code=401, detail="Admin chưa đăng nhập.")
+    return session_id
+
+
+@app.get("/admin")
+async def admin_ui() -> FileResponse:
+    if not ADMIN_UI_PATH.exists():
+        raise HTTPException(status_code=500, detail="Thiếu giao diện admin.")
+    return FileResponse(str(ADMIN_UI_PATH))
+
+
+@app.post("/api/admin/login")
+async def admin_login(payload: AdminLoginRequest) -> JSONResponse:
+    submitted = (payload.key or "").strip()
+    if not submitted or not secrets.compare_digest(submitted, ADMIN_LOGIN_KEY):
+        raise HTTPException(status_code=401, detail="Sai key đăng nhập admin.")
+
+    session_id = create_admin_session()
+    response = JSONResponse({"ok": True})
+    response.set_cookie(
+        key=ADMIN_SESSION_COOKIE,
+        value=session_id,
+        max_age=max(300, ADMIN_SESSION_TTL_SEC),
+        httponly=True,
+        samesite="lax",
+        secure=False,
+        path="/",
+    )
+    return response
+
+
+@app.post("/api/admin/logout")
+async def admin_logout(request: Request) -> JSONResponse:
+    session_id = (request.cookies.get(ADMIN_SESSION_COOKIE) or "").strip()
+    delete_admin_session(session_id)
+
+    response = JSONResponse({"ok": True})
+    response.delete_cookie(key=ADMIN_SESSION_COOKIE, path="/")
+    return response
+
+
+@app.get("/api/admin/me")
+async def admin_me(request: Request) -> dict:
+    require_admin_session(request)
+    return {"authenticated": True}
+
+
+@app.get("/api/admin/stats")
+async def admin_stats(request: Request) -> dict:
+    require_admin_session(request)
+    stats = await asyncio.to_thread(get_admin_stats_from_db)
+    return {"stats": stats}
+
+
+@app.get("/api/admin/requests")
+async def admin_requests(request: Request, limit: int = 200) -> dict:
+    require_admin_session(request)
+    items = await asyncio.to_thread(get_admin_requests_from_db, limit)
+    return {"items": items, "count": len(items)}
+
+
 @app.get("/api/health")
 async def health() -> dict:
     return {"ok": True, "time": now_iso()}
@@ -564,13 +785,14 @@ async def create_job(payload: CreateJobRequest, request: Request) -> dict:
         normalized = normalize_single_shopee_url(payload.url)
     except ValueError as err:
         raise HTTPException(status_code=400, detail=str(err)) from err
+    source = normalize_source(payload.source)
 
     try:
-        job_id = await asyncio.to_thread(create_job_in_db, normalized)
+        job_id = await asyncio.to_thread(create_job_in_db, normalized, ip, source)
     except QueueOverloadedError as err:
         raise HTTPException(status_code=503, detail=str(err)) from err
 
-    return {"jobId": job_id, "status": "pending"}
+    return {"jobId": job_id, "status": "pending", "source": source}
 
 
 @app.get("/api/jobs/{job_id}")

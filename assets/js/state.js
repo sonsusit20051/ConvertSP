@@ -3,7 +3,8 @@
     lastFull: "",
     isConverting: false,
     lastConvertAt: 0,
-    convertCooldownUntil: 0
+    convertCooldownUntil: 0,
+    source: "fb"
   };
 
   function setLastFull(value) {
@@ -38,6 +39,14 @@
     return state.convertCooldownUntil;
   }
 
+  function setSource(value) {
+    state.source = String(value || "fb").toLowerCase() === "yt" ? "yt" : "fb";
+  }
+
+  function getSource() {
+    return state.source || "fb";
+  }
+
   window.ShopeeState = {
     setLastFull,
     getLastFull,
@@ -46,6 +55,8 @@
     setLastConvertAt,
     getLastConvertAt,
     setConvertCooldownUntil,
-    getConvertCooldownUntil
+    getConvertCooldownUntil,
+    setSource,
+    getSource
   };
 })(window);
