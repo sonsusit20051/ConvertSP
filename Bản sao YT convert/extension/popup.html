@@ -1,0 +1,107 @@
+<!doctype html>
+<html lang="vi">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Worker Status</title>
+    <style>
+      :root {
+        --ok: #1f9d57;
+        --warn: #c97b15;
+        --err: #d13f3f;
+        --text: #1f2b3a;
+        --muted: #5f6b7a;
+        --line: #d9e1eb;
+      }
+      body {
+        margin: 0;
+        width: 320px;
+        font-family: "Segoe UI", Arial, sans-serif;
+        color: var(--text);
+        background: #fff;
+      }
+      .wrap {
+        padding: 12px;
+      }
+      .head {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        margin-bottom: 10px;
+      }
+      .dot {
+        width: 10px;
+        height: 10px;
+        border-radius: 50%;
+        background: #9aa5b3;
+      }
+      .dot.ok {
+        background: var(--ok);
+      }
+      .dot.warn {
+        background: var(--warn);
+      }
+      .dot.err {
+        background: var(--err);
+      }
+      .title {
+        font-size: 13px;
+        font-weight: 700;
+      }
+      .msg {
+        margin: 0 0 8px;
+        font-size: 12px;
+      }
+      .meta {
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        padding: 8px;
+        font-size: 11px;
+        color: var(--muted);
+        line-height: 1.45;
+      }
+      .actions {
+        margin-top: 10px;
+        display: flex;
+        gap: 8px;
+      }
+      button {
+        border: 0;
+        border-radius: 8px;
+        height: 30px;
+        padding: 0 10px;
+        font-size: 12px;
+        cursor: pointer;
+      }
+      #refreshBtn {
+        background: #1f77ff;
+        color: #fff;
+      }
+      #toggleBtn {
+        background: #edf2f8;
+        color: #233142;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      <div class="head">
+        <span id="statusDot" class="dot"></span>
+        <div class="title">Shopee Worker Status</div>
+      </div>
+      <p id="statusText" class="msg">Đang kiểm tra...</p>
+      <div class="meta">
+        <div id="lineWorker">Worker: -</div>
+        <div id="lineServer">Server: -</div>
+        <div id="lineQueue">Queue: -</div>
+        <div id="linePoll">Poll: -</div>
+        <div id="lineJob">Job: -</div>
+      </div>
+      <div class="actions">
+        <button id="refreshBtn" type="button">Kiểm tra ngay</button>
+        <button id="toggleBtn" type="button">Tắt worker</button>
+      </div>
+    </div>
+    <script src="popup.js"></script>
+  </body>
+</html>

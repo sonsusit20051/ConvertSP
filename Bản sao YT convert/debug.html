@@ -1,0 +1,233 @@
+<!doctype html>
+<html lang="vi">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Debug Queue Converter</title>
+    <style>
+      body {
+        margin: 0;
+        font-family: Arial, sans-serif;
+        background: #f7f8fb;
+        color: #1f2937;
+      }
+      .wrap {
+        max-width: 820px;
+        margin: 20px auto;
+        padding: 16px;
+      }
+      .card {
+        background: #fff;
+        border: 1px solid #e5e7eb;
+        border-radius: 12px;
+        padding: 14px;
+      }
+      h1 {
+        margin: 0 0 12px;
+        font-size: 20px;
+      }
+      .row {
+        display: grid;
+        gap: 8px;
+      }
+      input,
+      button,
+      textarea {
+        font: inherit;
+      }
+      input {
+        height: 40px;
+        padding: 0 10px;
+        border: 1px solid #cbd5e1;
+        border-radius: 8px;
+      }
+      .actions {
+        display: flex;
+        gap: 8px;
+        flex-wrap: wrap;
+      }
+      button {
+        height: 38px;
+        border: 0;
+        border-radius: 8px;
+        padding: 0 12px;
+        cursor: pointer;
+      }
+      #runBtn {
+        background: #f57c21;
+        color: #fff;
+      }
+      #healthBtn {
+        background: #16a34a;
+        color: #fff;
+      }
+      #clearBtn {
+        background: #e2e8f0;
+        color: #0f172a;
+      }
+      #result {
+        word-break: break-all;
+        padding: 10px;
+        border-radius: 8px;
+        border: 1px dashed #94a3b8;
+        background: #f8fafc;
+        min-height: 24px;
+      }
+      textarea {
+        width: 100%;
+        min-height: 260px;
+        border: 1px solid #cbd5e1;
+        border-radius: 8px;
+        padding: 8px;
+        resize: vertical;
+        background: #0b1020;
+        color: #c6f6d5;
+        font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+        font-size: 12px;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      <div class="card row">
+        <h1>Debug Queue Converter</h1>
+        <input id="urlInput" type="text" value="https://s.shopee.vn/8KkR37Lqs6" />
+        <div class="actions">
+          <button id="runBtn" type="button">Submit + Poll</button>
+          <button id="healthBtn" type="button">Health</button>
+          <button id="clearBtn" type="button">Clear Log</button>
+        </div>
+        <div id="result"></div>
+        <textarea id="log" readonly></textarea>
+      </div>
+    </div>
+
+    <script>
+      const API = "http://localhost:8787";
+      const logEl = document.getElementById("log");
+      const resultEl = document.getElementById("result");
+      const urlInput = document.getElementById("urlInput");
+      const runBtn = document.getElementById("runBtn");
+      const healthBtn = document.getElementById("healthBtn");
+      const clearBtn = document.getElementById("clearBtn");
+
+      function log(...args) {
+        const line = args
+          .map((x) => {
+            if (typeof x === "string") return x;
+            try {
+              return JSON.stringify(x);
+            } catch {
+              return String(x);
+            }
+          })
+          .join(" ");
+        logEl.value += `[${new Date().toLocaleTimeString()}] ${line}\n`;
+        logEl.scrollTop = logEl.scrollHeight;
+      }
+
+      async function getJson(path) {
+        const resp = await fetch(`${API}${path}`, { cache: "no-store" });
+        const data = await resp.json().catch(() => ({}));
+        if (!resp.ok) {
+          throw new Error(data.message || `HTTP ${resp.status}`);
+        }
+        return data;
+      }
+
+      async function postJson(path, payload) {
+        const resp = await fetch(`${API}${path}`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        });
+        const data = await resp.json().catch(() => ({}));
+        if (!resp.ok) {
+          throw new Error(data.message || `HTTP ${resp.status}`);
+        }
+        return data;
+      }
+
+      async function health() {
+        const data = await getJson("/api/health");
+        log("health", data);
+      }
+
+      async function submitAndPoll() {
+        const link = String(urlInput.value || "").trim();
+        resultEl.textContent = "";
+        if (!link) {
+          log("missing link");
+          return;
+        }
+
+        runBtn.disabled = true;
+        try {
+          const submit = await postJson("/api/convert", { input: link });
+          log("submit", submit);
+          const jobId = submit.jobId;
+          if (!jobId) {
+            throw new Error("Không có jobId.");
+          }
+
+          for (let i = 0; i < 120; i++) {
+            const status = await getJson(`/api/jobs/${encodeURIComponent(jobId)}`);
+            const job = status.job || {};
+            log("job", { id: job.id, status: job.status, message: job.message });
+
+            if (job.status === "success") {
+              const affiliate = job?.result?.affiliateLink || "";
+              resultEl.textContent = affiliate || "(empty affiliate link)";
+              log("affiliate", affiliate);
+              return;
+            }
+
+            if (job.status === "error" || job.status === "expired") {
+              resultEl.textContent = `FAILED: ${job.message || "unknown"}`;
+              return;
+            }
+
+            await new Promise((r) => setTimeout(r, 1000));
+          }
+
+          resultEl.textContent = "TIMEOUT";
+        } catch (err) {
+          log("error", err.message || String(err));
+          resultEl.textContent = `ERROR: ${err.message || String(err)}`;
+        } finally {
+          runBtn.disabled = false;
+        }
+      }
+
+      runBtn.addEventListener("click", (e) => {
+        e.preventDefault();
+        submitAndPoll();
+      });
+
+      healthBtn.addEventListener("click", async (e) => {
+        e.preventDefault();
+        try {
+          await health();
+        } catch (err) {
+          log("health error", err.message || String(err));
+        }
+      });
+
+      clearBtn.addEventListener("click", (e) => {
+        e.preventDefault();
+        logEl.value = "";
+        resultEl.textContent = "";
+      });
+
+      window.addEventListener("error", (ev) => {
+        log("window.error", ev.message || "unknown");
+      });
+
+      window.addEventListener("unhandledrejection", (ev) => {
+        log("unhandledrejection", ev.reason?.message || String(ev.reason || "unknown"));
+      });
+
+      log("debug page ready", { API });
+    </script>
+  </body>
+</html>

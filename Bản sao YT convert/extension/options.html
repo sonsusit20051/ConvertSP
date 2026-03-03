@@ -1,0 +1,92 @@
+<!doctype html>
+<html lang="vi">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Shopee Worker Bridge - Options</title>
+    <style>
+      body {
+        font-family: Arial, sans-serif;
+        max-width: 720px;
+        margin: 24px auto;
+        padding: 0 16px;
+      }
+      h1 {
+        font-size: 20px;
+      }
+      .grid {
+        display: grid;
+        gap: 10px;
+      }
+      label {
+        font-size: 14px;
+        font-weight: 600;
+      }
+      input {
+        width: 100%;
+        height: 36px;
+        padding: 0 10px;
+      }
+      button {
+        height: 38px;
+        padding: 0 14px;
+        cursor: pointer;
+      }
+      .status {
+        margin-top: 10px;
+        color: #0f5132;
+      }
+      .row {
+        display: flex;
+        gap: 10px;
+      }
+      .row > * {
+        flex: 1;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>Shopee Queue Worker Bridge</h1>
+    <div class="grid">
+      <label>
+        Server Base URL
+        <input id="serverBaseUrl" type="text" placeholder="http://localhost:8787" />
+      </label>
+      <label>
+        Worker Token
+        <input id="workerToken" type="text" placeholder="dev-worker-token" />
+      </label>
+      <div class="row">
+        <label>
+          Worker ID
+          <input id="workerId" type="text" />
+        </label>
+        <label>
+          Worker Name
+          <input id="workerName" type="text" />
+        </label>
+      </div>
+      <div class="row">
+        <label>
+          Affiliate ID
+          <input id="affiliateId" type="text" placeholder="mặc định 17391540096, có thể sửa" />
+        </label>
+        <label>
+          Sub ID
+          <input id="subId" type="text" placeholder="YT3" />
+        </label>
+      </div>
+      <label>
+        Base Redirect
+        <input id="baseRedirect" type="text" placeholder="https://s.shopee.vn/an_redir" />
+      </label>
+      <label>
+        <input id="enabled" type="checkbox" /> Bật worker
+      </label>
+      <button id="saveBtn" type="button">Lưu cấu hình</button>
+      <div id="status" class="status"></div>
+    </div>
+
+    <script src="options.js"></script>
+  </body>
+</html>

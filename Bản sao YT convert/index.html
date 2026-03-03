@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="vi">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta http-equiv="Cache-Control" content="no-store, no-cache, must-revalidate, max-age=0" />
+    <meta http-equiv="Pragma" content="no-cache" />
+    <meta http-equiv="Expires" content="0" />
+    <title>Shopee Link Converter (YT)</title>
+    <link rel="icon" type="image/jpeg" href="./446243393_377809118063061_5758244687025961947_n.jpg" />
+    <link rel="stylesheet" href="./styles.css?v=20260302-2" />
+  </head>
+  <body>
+    <main class="page">
+      <section class="card">
+        <header class="head">
+          <h1>Convert link Shopee</h1>
+        </header>
+
+        <div class="field">
+          <label for="sourceLink">Dán link Shopee</label>
+          <input
+            id="sourceLink"
+            type="text"
+            inputmode="url"
+            autocomplete="off"
+            spellcheck="false"
+            placeholder="https://s.shopee.vn/..."
+          />
+          <p id="inputError" class="input-error"></p>
+        </div>
+
+        <div class="field">
+          <label for="outputLink">Link đầu ra</label>
+          <div class="output-row">
+            <input
+              id="outputLink"
+              type="text"
+              inputmode="url"
+              autocomplete="off"
+              spellcheck="false"
+              placeholder="Link affiliate sẽ hiện ở đây"
+              readonly
+            />
+            <button id="copyOutputBtn" type="button" class="btn btn-light" disabled>Sao chép</button>
+          </div>
+        </div>
+
+        <div class="actions">
+          <button id="pasteBtn" type="button" class="btn btn-light">Dán link</button>
+          <button id="createBtn" type="button" class="btn btn-primary">Tạo link</button>
+          <button id="buyBtn" type="button" class="btn btn-open" disabled>Mở</button>
+        </div>
+        <p id="cooldownHint" class="cooldown-hint hidden">Bạn có thể tạo link mới sau 5s.</p>
+      </section>
+    </main>
+
+    <a
+      class="report-btn"
+      href="https://zalo.me/0353025356"
+      target="_blank"
+      rel="noopener noreferrer"
+      aria-label="Báo lỗi qua Zalo"
+    >
+      <span class="report-triangle">▲</span>
+      <span class="report-text">Báo lỗi</span>
+    </a>
+
+    <div class="contact-box" aria-label="Liên hệ">
+      <span class="contact-title">product by Sơn moi</span>
+      <a href="https://zalo.me/0353025356" target="_blank" rel="noopener noreferrer" aria-label="Liên hệ Zalo">
+        <img src="./Icon_of_Zalo.svg.webp" alt="Zalo" />
+      </a>
+      <a
+        href="https://www.facebook.com/sonmoi24.09"
+        target="_blank"
+        rel="noopener noreferrer"
+        aria-label="Liên hệ Facebook"
+      >
+        <img src="./2023_Facebook_icon.svg.webp" alt="Facebook" />
+      </a>
+    </div>
+
+    <div id="statusToast" class="status-toast hidden" role="status" aria-live="polite"></div>
+
+    <script type="module" src="./app/main.js?v=20260302-4"></script>
+  </body>
+</html>

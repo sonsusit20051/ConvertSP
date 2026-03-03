@@ -28,5 +28,5 @@ window.ShopeeConfig = {
   FALLBACK_SUB_HYPHEN_POLICY: "sanitize",
   FALLBACK_SUB_KEEP_EMPTY_SLOTS: true,
   // Backward compatibility (nếu không dùng FALLBACK_SUB_SLOTS)
-  FALLBACK_SUB_ID: "cvweb"
+  FALLBACK_SUB_ID: "cvweb-sonmoi---"
 };
