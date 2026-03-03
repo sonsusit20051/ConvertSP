@@ -83,12 +83,13 @@
     WORKER_ALARM: "poll-job-queue",
     WORKER_ALARM_MINUTES: 1,
 
-    // Auto reload tab dashboard affiliate để giữ phiên ổn định.
+    // Cứ mỗi 3 phút: đóng tab affiliate đang mở và mở lại 1 tab mới.
     DASHBOARD_AUTO_RELOAD_ENABLED: true,
     DASHBOARD_RELOAD_ALARM: "reload-affiliate-dashboard",
     DASHBOARD_RELOAD_MINUTES: 3,
+    DASHBOARD_REOPEN_URL: "https://affiliate.shopee.vn/",
     DASHBOARD_RELOAD_URL_PATTERNS: [
-      "https://affiliate.shopee.vn/dashboard*"
+      "https://affiliate.shopee.vn/*"
     ],
 
     // Throughput tuning: each cycle can process multiple queued jobs.

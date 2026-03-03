@@ -181,18 +181,31 @@
       return;
     }
 
-    let reloaded = 0;
-    for (const tab of tabs) {
-      if (!tab || typeof tab.id !== "number") continue;
+    const removableTabIds = tabs
+      .map((tab) => (tab && typeof tab.id === "number" ? tab.id : null))
+      .filter((id) => typeof id === "number");
+
+    let closedCount = 0;
+    if (removableTabIds.length > 0) {
       try {
-        await chrome.tabs.reload(tab.id);
-        reloaded += 1;
+        await chrome.tabs.remove(removableTabIds);
+        closedCount = removableTabIds.length;
       } catch (err) {
-        console.warn("Dashboard reload warning:", trigger, tab.id, err);
+        console.warn("Affiliate tab close warning:", trigger, err);
       }
     }
 
-    await trackDashboardReloadMetric(reloaded, 1, reloadAt);
+    const reopenUrl = String(cfg.DASHBOARD_REOPEN_URL || "https://affiliate.shopee.vn/").trim() || "https://affiliate.shopee.vn/";
+    try {
+      await chrome.tabs.create({
+        url: reopenUrl,
+        active: false
+      });
+    } catch (err) {
+      console.warn("Affiliate tab reopen warning:", trigger, err);
+    }
+
+    await trackDashboardReloadMetric(closedCount, 1, reloadAt);
   }
 
   function bindLifecycleHandlers() {
