@@ -1,5 +1,6 @@
 importScripts(
   "config.js",
+  "connection-state.js",
   "header-cache.js",
   "internal-api.js",
   "backend-api.js",

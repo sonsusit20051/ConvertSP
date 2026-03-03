@@ -3,12 +3,20 @@
   const backendApi = self.ExtBackendApi;
   const runner = self.ExtWorkerRunner;
   const keepAlive = self.ExtKeepAlive;
+  const connection = self.ExtConnectionState;
 
   async function buildStatusPayload() {
-    const [backendHealth, keepAliveStatus] = await Promise.all([
-      backendApi.checkBackendHealth(),
-      keepAlive.getStatus()
+    const [keepAliveStatus, connectionStatus] = await Promise.all([
+      keepAlive.getStatus(),
+      connection ? connection.getStatus() : Promise.resolve({ connected: true })
     ]);
+    const backendHealth = connectionStatus.connected === false
+      ? {
+          ok: false,
+          status: 0,
+          error: "Extension đang ngắt kết nối."
+        }
+      : await backendApi.checkBackendHealth();
     const headerCache = self.ExtHeaderCache ? self.ExtHeaderCache.getStatus() : null;
 
     return {
@@ -16,6 +24,7 @@
       authMode: cfg.INTERNAL_API_AUTH_MODE || "bearer",
       backendHealth,
       keepAlive: keepAliveStatus,
+      connection: connectionStatus,
       worker: runner.getStatus(),
       headerCache
     };
@@ -42,6 +51,13 @@
     if (message.type === "POPUP_RUN_NOW") {
       (async () => {
         try {
+          if (connection && !(await connection.isConnected())) {
+            sendResponse({
+              ok: false,
+              error: "Extension đang ngắt kết nối. Hãy bấm Kết nối lại trước."
+            });
+            return;
+          }
           const result = await runner.runWorkerCycle("popupRunNow");
           const status = await buildStatusPayload();
           sendResponse({ ok: true, result, status });
@@ -49,6 +65,28 @@
           sendResponse({
             ok: false,
             error: (err && err.message) || "Run now thất bại."
+          });
+        }
+      })();
+      return true;
+    }
+
+    if (message.type === "POPUP_SET_CONNECTION") {
+      (async () => {
+        try {
+          const nextConnected = Boolean(message.connected);
+          if (connection) {
+            await connection.setConnected(nextConnected, "popupToggle");
+          }
+          if (nextConnected) {
+            runner.runWorkerCycle("popupReconnect").catch(() => {});
+          }
+          const status = await buildStatusPayload();
+          sendResponse({ ok: true, status });
+        } catch (err) {
+          sendResponse({
+            ok: false,
+            error: (err && err.message) || "Không đổi được trạng thái kết nối."
           });
         }
       })();

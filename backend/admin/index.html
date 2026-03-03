@@ -243,6 +243,9 @@
           <div class="stat"><div class="k">Pending</div><div id="stPending" class="v">0</div></div>
           <div class="stat"><div class="k">Done</div><div id="stDone" class="v">0</div></div>
           <div class="stat"><div class="k">Failed</div><div id="stFailed" class="v">0</div></div>
+          <div class="stat"><div class="k">Reload dashboard</div><div id="stReloadCount" class="v">0</div></div>
+          <div class="stat"><div class="k">Chu kỳ reload</div><div id="stReloadCycles" class="v">0</div></div>
+          <div class="stat"><div class="k">Reload gần nhất</div><div id="stReloadLast" class="v" style="font-size:16px;line-height:1.25;">-</div></div>
         </section>
 
         <div class="table-wrap">
@@ -285,6 +288,9 @@
       const stPending = document.getElementById("stPending");
       const stDone = document.getElementById("stDone");
       const stFailed = document.getElementById("stFailed");
+      const stReloadCount = document.getElementById("stReloadCount");
+      const stReloadCycles = document.getElementById("stReloadCycles");
+      const stReloadLast = document.getElementById("stReloadLast");
 
       let pollTimer = null;
 
@@ -301,6 +307,13 @@
         }
         if (kind) el.classList.add(kind);
         el.textContent = text;
+      }
+
+      function formatDateTime(input) {
+        if (!input) return "-";
+        const d = new Date(input);
+        if (Number.isNaN(d.getTime())) return String(input);
+        return d.toLocaleString();
       }
 
       function showLogin() {
@@ -367,6 +380,9 @@
         setText(stPending, stats.pendingCount || 0);
         setText(stDone, stats.doneCount || 0);
         setText(stFailed, stats.failedCount || 0);
+        setText(stReloadCount, stats.dashboardReloadCount || 0);
+        setText(stReloadCycles, stats.dashboardReloadCycles || 0);
+        setText(stReloadLast, formatDateTime(stats.lastDashboardReloadAt));
       }
 
       async function loadDashboardData() {

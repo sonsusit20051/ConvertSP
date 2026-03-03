@@ -25,6 +25,9 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Deque, Dict, Optional
 from urllib.parse import parse_qsl, unquote, urlparse
+from urllib.request import Request as UrlRequest
+from urllib.request import urlopen
+from urllib.error import HTTPError, URLError
 
 from fastapi import FastAPI, Header, HTTPException, Request
 from fastapi.exceptions import RequestValidationError
@@ -125,6 +128,27 @@ def _is_direct_product_path(path: str) -> bool:
     )
 
 
+def _extract_product_ids_from_path(path: str) -> Optional[dict]:
+    value = path or "/"
+    match = re.search(r"-i\.(\d+)\.(\d+)/?$", value, flags=re.IGNORECASE)
+    if match:
+        return {"shopId": match.group(1), "itemId": match.group(2)}
+
+    match = re.match(r"^/product/(\d+)/(\d+)/?$", value, flags=re.IGNORECASE)
+    if match:
+        return {"shopId": match.group(1), "itemId": match.group(2)}
+
+    match = re.match(r"^/universal-link/product/(\d+)/(\d+)/?$", value, flags=re.IGNORECASE)
+    if match:
+        return {"shopId": match.group(1), "itemId": match.group(2)}
+
+    match = re.match(r"^/[^/]+/(\d+)/(\d+)/?$", value, flags=re.IGNORECASE)
+    if match:
+        return {"shopId": match.group(1), "itemId": match.group(2)}
+
+    return None
+
+
 def _parse_possibly_encoded_http_url(raw: str) -> Optional[str]:
     candidate = (raw or "").strip()
     if not candidate:
@@ -188,6 +212,54 @@ def _normalize_shopee_product_url(one_url: str, depth: int = 0) -> Optional[str]
         return None
 
     return None
+
+
+def extract_product_ids_from_url(one_url: str, depth: int = 0) -> Optional[dict]:
+    if depth > MAX_REDIRECT_DEPTH:
+        return None
+
+    parsed = urlparse(one_url)
+    host = _normalize_host(parsed.hostname or "")
+    path = parsed.path or "/"
+    ids = _extract_product_ids_from_path(path)
+    if ids:
+        return ids
+
+    if _is_affiliate_redirect_path(path):
+        origin_raw = _origin_link_from_query(parsed)
+        origin_url = _parse_possibly_encoded_http_url(origin_raw)
+        if origin_url:
+            return extract_product_ids_from_url(origin_url, depth + 1)
+
+    if _is_short_shopee_host(host):
+        return None
+
+    return None
+
+
+def resolve_final_url(one_url: str) -> Optional[str]:
+    try:
+        req = UrlRequest(
+            one_url,
+            headers={
+                "User-Agent": (
+                    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+                    "AppleWebKit/537.36 (KHTML, like Gecko) "
+                    "Chrome/124.0.0.0 Safari/537.36"
+                )
+            },
+            method="GET",
+        )
+        with urlopen(req, timeout=12) as res:
+            final_url = res.geturl() or one_url
+            return final_url
+    except HTTPError as err:
+        final_url = err.geturl() if hasattr(err, "geturl") else ""
+        return final_url or None
+    except URLError:
+        return None
+    except Exception:
+        return None
 
 
 def normalize_single_shopee_url(raw_text: Optional[str]) -> str:
@@ -376,6 +448,38 @@ def init_db() -> None:
             conn.execute("ALTER TABLE jobs ADD COLUMN requester_ip TEXT NOT NULL DEFAULT 'unknown'")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_jobs_status_created ON jobs(status, created_at)")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_jobs_created_at ON jobs(created_at)")
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS extension_metrics (
+              id INTEGER PRIMARY KEY CHECK (id = 1),
+              dashboard_reload_count INTEGER NOT NULL DEFAULT 0,
+              dashboard_reload_cycles INTEGER NOT NULL DEFAULT 0,
+              last_dashboard_reload_at TEXT,
+              updated_at TEXT NOT NULL
+            )
+            """
+        )
+        ext_cols = {row["name"] for row in conn.execute("PRAGMA table_info(extension_metrics)").fetchall()}
+        if "dashboard_reload_count" not in ext_cols:
+            conn.execute("ALTER TABLE extension_metrics ADD COLUMN dashboard_reload_count INTEGER NOT NULL DEFAULT 0")
+        if "dashboard_reload_cycles" not in ext_cols:
+            conn.execute("ALTER TABLE extension_metrics ADD COLUMN dashboard_reload_cycles INTEGER NOT NULL DEFAULT 0")
+        if "last_dashboard_reload_at" not in ext_cols:
+            conn.execute("ALTER TABLE extension_metrics ADD COLUMN last_dashboard_reload_at TEXT")
+        if "updated_at" not in ext_cols:
+            conn.execute("ALTER TABLE extension_metrics ADD COLUMN updated_at TEXT NOT NULL DEFAULT ''")
+        conn.execute(
+            """
+            INSERT OR IGNORE INTO extension_metrics (
+              id,
+              dashboard_reload_count,
+              dashboard_reload_cycles,
+              last_dashboard_reload_at,
+              updated_at
+            ) VALUES (1, 0, 0, NULL, ?)
+            """,
+            (now_iso(),),
+        )
         conn.commit()
     finally:
         conn.close()
@@ -534,8 +638,24 @@ def get_admin_stats_from_db() -> dict:
             "SELECT COUNT(*) AS c FROM jobs WHERE created_at >= ?",
             (last_24h_cutoff,),
         ).fetchone()["c"]
+        ext_metrics = conn.execute(
+            """
+            SELECT
+              dashboard_reload_count,
+              dashboard_reload_cycles,
+              last_dashboard_reload_at,
+              updated_at
+            FROM extension_metrics
+            WHERE id = 1
+            """
+        ).fetchone()
     finally:
         conn.close()
+
+    dashboard_reload_count = int((ext_metrics["dashboard_reload_count"] if ext_metrics else 0) or 0)
+    dashboard_reload_cycles = int((ext_metrics["dashboard_reload_cycles"] if ext_metrics else 0) or 0)
+    last_dashboard_reload_at = ext_metrics["last_dashboard_reload_at"] if ext_metrics else None
+    last_dashboard_metric_update_at = ext_metrics["updated_at"] if ext_metrics else None
 
     return {
         "totalRequests": int(totals["total_requests"] or 0),
@@ -547,7 +667,48 @@ def get_admin_stats_from_db() -> dict:
         "sourceYtCount": int(totals["source_yt_count"] or 0),
         "todayRequests": int(today_requests or 0),
         "last24hRequests": int(last_24h_requests or 0),
+        "dashboardReloadCount": dashboard_reload_count,
+        "dashboardReloadCycles": dashboard_reload_cycles,
+        "lastDashboardReloadAt": last_dashboard_reload_at,
+        "lastDashboardMetricUpdateAt": last_dashboard_metric_update_at,
     }
+
+
+def append_worker_reload_metrics(reloaded_tabs: int, cycle_count: int, last_reload_at: Optional[str]) -> None:
+    safe_tabs = max(0, int(reloaded_tabs or 0))
+    safe_cycles = max(0, int(cycle_count or 0))
+    now = now_iso()
+    effective_last_reload_at = (last_reload_at or "").strip() or now
+
+    conn = db_conn()
+    try:
+        conn.execute(
+            """
+            INSERT OR IGNORE INTO extension_metrics (
+              id,
+              dashboard_reload_count,
+              dashboard_reload_cycles,
+              last_dashboard_reload_at,
+              updated_at
+            ) VALUES (1, 0, 0, NULL, ?)
+            """,
+            (now,),
+        )
+        conn.execute(
+            """
+            UPDATE extension_metrics
+            SET
+              dashboard_reload_count = dashboard_reload_count + ?,
+              dashboard_reload_cycles = dashboard_reload_cycles + ?,
+              last_dashboard_reload_at = ?,
+              updated_at = ?
+            WHERE id = 1
+            """,
+            (safe_tabs, safe_cycles, effective_last_reload_at, now),
+        )
+        conn.commit()
+    finally:
+        conn.close()
 
 
 def get_admin_requests_from_db(limit: int = 200) -> list[dict]:
@@ -609,6 +770,12 @@ class WorkerCompleteRequest(BaseModel):
 
 class WorkerFailRequest(BaseModel):
     error: Optional[str] = None
+
+
+class WorkerReloadMetricRequest(BaseModel):
+    reloadedTabs: int = Field(default=0, ge=0, le=100)
+    cycleCount: int = Field(default=1, ge=0, le=50)
+    lastReloadAt: Optional[str] = None
 
 
 class AdminLoginRequest(BaseModel):
@@ -775,6 +942,31 @@ async def health() -> dict:
     return {"ok": True, "time": now_iso()}
 
 
+@app.get("/api/resolve-product-ids")
+async def resolve_product_ids(url: str) -> dict:
+    try:
+        normalized = normalize_single_shopee_url(url)
+    except ValueError as err:
+        raise HTTPException(status_code=400, detail=str(err)) from err
+
+    resolved_url = normalized
+    ids = extract_product_ids_from_url(normalized, depth=0)
+    if not ids:
+        final_url = await asyncio.to_thread(resolve_final_url, normalized)
+        if final_url:
+            resolved_url = final_url
+            ids = extract_product_ids_from_url(final_url, depth=0)
+
+    if not ids:
+        raise HTTPException(status_code=422, detail="Không tách được shop_id/item_id từ link này.")
+
+    return {
+        "shopId": ids["shopId"],
+        "itemId": ids["itemId"],
+        "resolvedUrl": resolved_url,
+    }
+
+
 @app.post("/api/jobs", status_code=201)
 async def create_job(payload: CreateJobRequest, request: Request) -> dict:
     ip = client_ip_from_request(request)
@@ -839,6 +1031,19 @@ async def worker_fail(job_id: str, payload: WorkerFailRequest, x_worker_key: str
     if not ok:
         raise HTTPException(status_code=409, detail="Job không ở trạng thái processing hoặc không tồn tại.")
 
+    return {"ok": True}
+
+
+@app.post("/api/worker/metrics/reload")
+async def worker_metric_reload(payload: WorkerReloadMetricRequest, x_worker_key: str = Header(default="", alias="X-Worker-Key")) -> dict:
+    require_worker_key(x_worker_key)
+
+    await asyncio.to_thread(
+        append_worker_reload_metrics,
+        payload.reloadedTabs,
+        payload.cycleCount,
+        payload.lastReloadAt,
+    )
     return {"ok": True}
 
 

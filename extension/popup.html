@@ -15,8 +15,10 @@
 
     <div class="meta">
       <div class="line"><span>Auth mode:</span> <strong id="authMode">-</strong></div>
+      <div class="line"><span>Kết nối:</span> <strong id="connectionState">Đang kiểm tra...</strong></div>
       <div class="line"><span>Backend:</span> <strong id="backendHealth">Đang kiểm tra...</strong></div>
       <div class="line"><span>KeepAlive:</span> <strong id="keepAlive">Đang kiểm tra...</strong></div>
+      <div class="line"><span>Dashboard reload:</span> <strong id="dashboardReload">0</strong></div>
       <div class="line"><span>Captured headers:</span> <strong id="capturedHeaders">0</strong></div>
       <div class="line"><span>Lần chạy cuối:</span> <strong id="lastRun">-</strong></div>
     </div>
@@ -26,6 +28,7 @@
     <div class="row actions">
       <button id="btnRefresh" class="btn ghost">Làm mới</button>
       <button id="btnRun" class="btn primary">Kiểm tra ngay</button>
+      <button id="btnToggleConnection" class="btn ghost">Ngắt kết nối</button>
     </div>
   </main>
 

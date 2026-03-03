@@ -30,6 +30,10 @@
     match = value.match(/^\/universal-link\/product\/(\d+)\/(\d+)\/?$/i);
     if (match) return { shopId: match[1], itemId: match[2] };
 
+    // Hỗ trợ dạng: /shopname/{shopId}/{itemId}
+    match = value.match(/^\/[^/]+\/(\d+)\/(\d+)\/?$/i);
+    if (match) return { shopId: match[1], itemId: match[2] };
+
     return null;
   }
 
@@ -59,8 +63,32 @@
     }
   }
 
-  function buildFallbackLink(inputUrl) {
-    const ids = parseProductIds(inputUrl, 0);
+  async function resolveFallbackProductIds(inputUrl) {
+    const localIds = parseProductIds(inputUrl, 0);
+    if (localIds && localIds.shopId && localIds.itemId) {
+      return localIds;
+    }
+
+    if (!api || typeof api.resolveProductIds !== "function") {
+      return null;
+    }
+
+    try {
+      const remoteIds = await api.resolveProductIds(inputUrl);
+      if (!remoteIds || !remoteIds.shopId || !remoteIds.itemId) {
+        return null;
+      }
+      return {
+        shopId: String(remoteIds.shopId),
+        itemId: String(remoteIds.itemId)
+      };
+    } catch (_) {
+      return null;
+    }
+  }
+
+  async function buildFallbackLink(inputUrl) {
+    const ids = await resolveFallbackProductIds(inputUrl);
     if (!ids || !ids.shopId || !ids.itemId) return "";
 
     const affiliateId = pickFallbackAffiliateId();
@@ -79,9 +107,20 @@
     return `${baseUrl}?${params.toString()}`;
   }
 
-  function shouldUseFallbackForError(message) {
+  function shouldUseFallbackForError(message, source) {
+    if (String(source || "fb").toLowerCase() !== "fb") return false;
     const text = String(message || "").toLowerCase();
-    return text.includes("quá thời gian chờ xử lý") || text.includes("backend phản hồi chậm quá");
+    return (
+      text.includes("quá thời gian chờ xử lý")
+      || text.includes("backend phản hồi chậm quá")
+      || text.includes("[cookie/affiliate_tab]")
+      || text.includes("[cookie/service_worker]")
+      || text.includes("[bearer/service_worker]")
+      || text.includes("không convert được link")
+      || text.includes("api không trả về afflink")
+      || text.includes("shopee trả failcode")
+      || text.includes("graphql trả lỗi")
+    );
   }
 
   function getCooldownRemainingMs() {
@@ -179,6 +218,7 @@
   async function handleConvert() {
     ui.setStatus("");
     if (state.isConverting()) return;
+    const source = state.getSource ? state.getSource() : "fb";
 
     const now = Date.now();
     const cooldownRemainingMs = getCooldownRemainingMs();
@@ -214,7 +254,6 @@
       ui.setResultPreview("Đang chuyển đổi...");
       ui.setStatus("Đang gửi yêu cầu convert...");
 
-      const source = state.getSource ? state.getSource() : "fb";
       const jobId = await api.createJob(cleaned, source);
       const shortJobId = String(jobId || "").slice(0, 8);
       startWaitTicker(shortJobId);
@@ -235,11 +274,11 @@
       const message = (err && err.message) || "Không chuyển đổi được";
 
       const enableFallback = cfg.FALLBACK_ON_EXTENSION_TIMEOUT !== false;
-      if (enableFallback && shouldUseFallbackForError(message)) {
-        const fallbackUrl = buildFallbackLink(cleaned || raw);
+      if (enableFallback && shouldUseFallbackForError(message, source)) {
+        const fallbackUrl = await buildFallbackLink(cleaned || raw);
         if (fallbackUrl) {
           ui.setGenerated(fallbackUrl);
-          ui.setStatus("Không nhận được phản hồi từ extension, đã tạo link dự phòng.");
+          ui.setStatus("Lỗi gọi API từ extension, đã chuyển sang link dự phòng FB.");
           return;
         }
       }

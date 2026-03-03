@@ -3,13 +3,17 @@
 
   const dot = $("dot");
   const authMode = $("authMode");
+  const connectionState = $("connectionState");
   const backendHealth = $("backendHealth");
   const keepAlive = $("keepAlive");
+  const dashboardReload = $("dashboardReload");
   const capturedHeaders = $("capturedHeaders");
   const lastRun = $("lastRun");
   const errorBox = $("errorBox");
   const btnRefresh = $("btnRefresh");
   const btnRun = $("btnRun");
+  const btnToggleConnection = $("btnToggleConnection");
+  let currentConnected = true;
 
   function setError(msg) {
     if (!msg) {
@@ -50,13 +54,28 @@
     const backend = status.backendHealth || {};
     const worker = status.worker || {};
     const ka = status.keepAlive || {};
+    const conn = status.connection || {};
     const hc = status.headerCache || {};
     authMode.textContent = String(status.authMode || "unknown").toUpperCase();
+    currentConnected = conn.connected !== false;
+    connectionState.textContent = currentConnected ? "Đang kết nối" : "Đã ngắt kết nối";
+    btnToggleConnection.textContent = currentConnected ? "Ngắt kết nối" : "Kết nối lại";
+    btnRun.disabled = !currentConnected;
 
     backendHealth.textContent = backend.ok ? "Online" : "Offline";
     keepAlive.textContent = ka.offscreenActive ? "On" : "Fallback";
+    const totalReloads = Number.isFinite(Number(ka.totalDashboardReloadCount)) ? Number(ka.totalDashboardReloadCount) : 0;
+    const lastReloadTabs = Number.isFinite(Number(ka.lastDashboardReloadCount)) ? Number(ka.lastDashboardReloadCount) : 0;
+    const lastReloadAt = fmtIso(ka.lastDashboardReloadAt);
+    dashboardReload.textContent = `${totalReloads} (gần nhất: ${lastReloadTabs} tab @ ${lastReloadAt})`;
     capturedHeaders.textContent = String(hc.headerCount || 0);
     lastRun.textContent = fmtIso(worker.lastCycleFinishedAt);
+
+    if (!currentConnected) {
+      setDot("warn");
+      setError("Extension đang ngắt kết nối. Worker sẽ tạm dừng poll job và reload dashboard.");
+      return;
+    }
 
     if (worker.lastError) {
       setDot("err");
@@ -74,8 +93,11 @@
     setError("");
   }
 
-  async function callBackground(type) {
-    return chrome.runtime.sendMessage({ type });
+  async function callBackground(type, payload) {
+    return chrome.runtime.sendMessage({
+      type,
+      ...(payload && typeof payload === "object" ? payload : {})
+    });
   }
 
   async function refreshStatus() {
@@ -94,6 +116,7 @@
   async function runNow() {
     btnRun.disabled = true;
     btnRefresh.disabled = true;
+    btnToggleConnection.disabled = true;
     setError("");
 
     try {
@@ -106,13 +129,37 @@
       setDot("err");
       setError(humanizeError((err && err.message) || "Run now thất bại."));
     } finally {
-      btnRun.disabled = false;
+      btnRun.disabled = !currentConnected;
       btnRefresh.disabled = false;
+      btnToggleConnection.disabled = false;
+    }
+  }
+
+  async function toggleConnection() {
+    btnRun.disabled = true;
+    btnRefresh.disabled = true;
+    btnToggleConnection.disabled = true;
+    setError("");
+
+    try {
+      const res = await callBackground("POPUP_SET_CONNECTION", { connected: !currentConnected });
+      if (!res || !res.ok) {
+        throw new Error((res && res.error) || "Không đổi được trạng thái kết nối.");
+      }
+      renderStatus(res);
+    } catch (err) {
+      setDot("err");
+      setError(humanizeError((err && err.message) || "Toggle kết nối thất bại."));
+    } finally {
+      btnRun.disabled = !currentConnected;
+      btnRefresh.disabled = false;
+      btnToggleConnection.disabled = false;
     }
   }
 
   btnRefresh.addEventListener("click", refreshStatus);
   btnRun.addEventListener("click", runNow);
+  btnToggleConnection.addEventListener("click", toggleConnection);
 
   refreshStatus();
 })();

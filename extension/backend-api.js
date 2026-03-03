@@ -86,10 +86,35 @@
     }
   }
 
+  async function reportDashboardReloadMetric(reloadedTabs, cycleCount, lastReloadAt) {
+    const safeReloadedTabs = Number.isFinite(Number(reloadedTabs)) ? Math.max(0, Math.trunc(Number(reloadedTabs))) : 0;
+    const safeCycleCount = Number.isFinite(Number(cycleCount)) ? Math.max(0, Math.trunc(Number(cycleCount))) : 0;
+    const payload = {
+      reloadedTabs: safeReloadedTabs,
+      cycleCount: safeCycleCount,
+      lastReloadAt: lastReloadAt || null
+    };
+
+    const res = await fetch(`${cfg.BACKEND_BASE_URL}/api/worker/metrics/reload`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-Worker-Key": cfg.WORKER_KEY
+      },
+      body: JSON.stringify(payload)
+    });
+
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      throw new Error(data.error || `Không cập nhật metric reload (HTTP ${res.status}).`);
+    }
+  }
+
   self.ExtBackendApi = {
     checkBackendHealth,
     fetchNextJob,
     reportJobComplete,
-    reportJobFail
+    reportJobFail,
+    reportDashboardReloadMetric
   };
 })(self);

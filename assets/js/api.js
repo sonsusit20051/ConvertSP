@@ -163,6 +163,35 @@
     throw new Error("Quá thời gian chờ xử lý. Vui lòng thử lại.");
   }
 
+  async function resolveProductIds(rawUrl) {
+    const params = new URLSearchParams({ url: String(rawUrl || "").trim() });
+    const endpoint = `${cfg.BACKEND_BASE_URL}/api/resolve-product-ids?${params.toString()}`;
+    const res = await fetchWithTimeout(endpoint, {
+      cache: "no-store"
+    });
+    const data = await parseJsonSafe(res);
+
+    if (!res.ok) {
+      const message = extractApiError(res.status, data);
+      throw new Error(`${message} (HTTP ${res.status})`);
+    }
+
+    const shopId = pickNonEmptyString([
+      data && data.shopId,
+      data && data.shop_id
+    ]);
+    const itemId = pickNonEmptyString([
+      data && data.itemId,
+      data && data.item_id
+    ]);
+
+    if (!shopId || !itemId) {
+      throw new Error("Backend không tách được shop_id/item_id.");
+    }
+
+    return { shopId, itemId };
+  }
+
   async function convertViaBackend(rawUrl, source) {
     const jobId = await createJob(rawUrl, source);
     return waitForJob(jobId);
@@ -171,6 +200,7 @@
   window.ShopeeApi = {
     createJob,
     waitForJob,
+    resolveProductIds,
     convertViaBackend
   };
 })(window);

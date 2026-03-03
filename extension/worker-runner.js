@@ -2,6 +2,7 @@
   const cfg = self.ExtConfig;
   const internalApi = self.ExtInternalApi;
   const backendApi = self.ExtBackendApi;
+  const connection = self.ExtConnectionState;
 
   let running = false;
   const runtimeStatus = {
@@ -59,6 +60,22 @@
 
   // Run a bounded batch to avoid monopolizing worker execution time.
   async function runWorkerCycle(trigger) {
+    const connected = connection ? await connection.isConnected() : true;
+    if (!connected) {
+      runtimeStatus.lastTrigger = trigger || "unknown";
+      runtimeStatus.lastCycleStartedAt = new Date().toISOString();
+      runtimeStatus.lastCycleFinishedAt = runtimeStatus.lastCycleStartedAt;
+      runtimeStatus.lastProcessedCount = 0;
+      runtimeStatus.lastFailureCount = 0;
+      runtimeStatus.lastFailureMessage = null;
+      runtimeStatus.lastError = null;
+      return {
+        skipped: true,
+        reason: "disconnected",
+        status: getStatus()
+      };
+    }
+
     if (running) {
       return {
         skipped: true,

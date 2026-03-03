@@ -54,6 +54,12 @@ body {
 }
 .actions {
   margin-top: 10px;
+  flex-wrap: wrap;
+  justify-content: flex-start;
+}
+.actions .btn {
+  flex: 1 1 30%;
+  min-width: 92px;
 }
 .btn {
   border: 1px solid #dbe2ea;

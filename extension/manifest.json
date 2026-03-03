@@ -9,7 +9,8 @@
     "cookies",
     "webRequest",
     "tabs",
-    "scripting"
+    "scripting",
+    "storage"
   ],
   "host_permissions": [
     "https://your-internal-api.example.com/*",
