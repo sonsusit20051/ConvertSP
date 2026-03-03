@@ -11,7 +11,14 @@
   }
 
   function setStatus(msg) {
-    dom.status.textContent = msg || "Đang ở chế độ đổi mã Facebook.";
+    const source = state.getSource ? state.getSource() : "fb";
+    const isYt = String(source || "fb").toLowerCase() === "yt";
+    const defaultMsg = String(source || "fb").toLowerCase() === "yt"
+      ? "Đang ở chế độ đổi mã Youtube. Nhập key 6 ký tự do admin cấp."
+      : "Đang ở chế độ đổi mã Facebook.";
+    dom.status.classList.remove("source-fb", "source-yt");
+    dom.status.classList.add(isYt ? "source-yt" : "source-fb");
+    dom.status.textContent = msg || defaultMsg;
   }
 
   function setReadyButtons(ready) {

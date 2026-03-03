@@ -98,13 +98,18 @@
     return res.json().catch(() => ({}));
   }
 
-  async function createJob(rawUrl, source) {
+  async function createJob(rawUrl, source, ytKey) {
     const normalizedSource = String(source || "fb").toLowerCase() === "yt" ? "yt" : "fb";
+    const normalizedYtKey = String(ytKey || "").trim().toUpperCase();
+    const payload = { url: rawUrl, source: normalizedSource };
+    if (normalizedSource === "yt") {
+      payload.ytKey = normalizedYtKey;
+    }
     const res = await fetchWithTimeout(`${cfg.BACKEND_BASE_URL}/api/jobs`, {
       method: "POST",
       cache: "no-store",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ url: rawUrl, source: normalizedSource })
+      body: JSON.stringify(payload)
     });
 
     const data = await parseJsonSafe(res);
@@ -199,16 +204,44 @@
       data && data.itemId,
       data && data.item_id
     ]);
+    const tld = pickNonEmptyString([
+      data && data.tld,
+      data && data.marketTld
+    ]);
+    const marketDomain = pickNonEmptyString([
+      data && data.marketDomain,
+      data && data.market_domain
+    ]);
+    const shortDomain = pickNonEmptyString([
+      data && data.shortDomain,
+      data && data.short_domain
+    ]);
+    const landingClean = pickNonEmptyString([
+      data && data.landingClean,
+      data && data.landing_clean
+    ]);
+    const originLink = pickNonEmptyString([
+      data && data.originLink,
+      data && data.origin_link
+    ]);
 
     if (!shopId || !itemId) {
       throw new Error("Backend không tách được shop_id/item_id.");
     }
 
-    return { shopId, itemId };
+    return {
+      shopId,
+      itemId,
+      tld,
+      marketDomain,
+      shortDomain,
+      landingClean,
+      originLink
+    };
   }
 
-  async function convertViaBackend(rawUrl, source) {
-    const jobId = await createJob(rawUrl, source);
+  async function convertViaBackend(rawUrl, source, ytKey) {
+    const jobId = await createJob(rawUrl, source, ytKey);
     return waitForJob(jobId);
   }
 

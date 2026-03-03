@@ -1,13 +1,45 @@
 (function (window) {
   const cfg = window.ShopeeConfig;
+  const dom = window.ShopeeDom;
   const state = window.ShopeeState;
   const ui = window.ShopeeUI;
   const validators = window.ShopeeValidators;
   const clipboard = window.ShopeeClipboard;
   const api = window.ShopeeApi;
   const cacheKey = cfg.INPUT_CACHE_KEY || "shopee_converter_input_cache";
+  const affiliateRoundRobinKey = "shopee_fallback_affiliate_rr_index";
+  const MARKET_DOMAIN_BY_TLD = {
+    vn: "shopee.vn",
+    th: "shopee.co.th",
+    sg: "shopee.sg",
+    my: "shopee.com.my",
+    ph: "shopee.ph",
+    id: "shopee.co.id",
+    tw: "shopee.tw",
+    br: "shopee.com.br",
+    mx: "shopee.com.mx",
+    co: "shopee.com.co",
+    cl: "shopee.cl"
+  };
   let waitTicker = null;
   let cooldownTicker = null;
+  let affiliateRoundRobinIndex = 0;
+
+  function readAffiliateRoundRobinIndex() {
+    try {
+      const raw = window.localStorage.getItem(affiliateRoundRobinKey);
+      const n = Number(raw);
+      if (Number.isFinite(n) && n >= 0) return Math.trunc(n);
+    } catch (_) {}
+    return affiliateRoundRobinIndex;
+  }
+
+  function writeAffiliateRoundRobinIndex(value) {
+    affiliateRoundRobinIndex = Math.max(0, Math.trunc(Number(value) || 0));
+    try {
+      window.localStorage.setItem(affiliateRoundRobinKey, String(affiliateRoundRobinIndex));
+    } catch (_) {}
+  }
 
   function pickFallbackAffiliateId() {
     const ids = Array.isArray(cfg.FALLBACK_AFFILIATE_IDS) ? cfg.FALLBACK_AFFILIATE_IDS : [];
@@ -15,8 +47,49 @@
       .map((id) => String(id || "").trim())
       .filter(Boolean);
     if (normalized.length === 0) return "";
-    const idx = Math.floor(Math.random() * normalized.length);
-    return normalized[idx];
+    const mode = String(cfg.FALLBACK_AFFILIATE_PICK_MODE || "random").trim().toLowerCase();
+    if (mode === "fixed") return normalized[0];
+    if (mode === "round_robin" || mode === "round-robin") {
+      const cursor = readAffiliateRoundRobinIndex();
+      const idx = cursor % normalized.length;
+      writeAffiliateRoundRobinIndex(cursor + 1);
+      return normalized[idx];
+    }
+    const randomIdx = Math.floor(Math.random() * normalized.length);
+    return normalized[randomIdx];
+  }
+
+  function normalizeHost(hostname) {
+    return String(hostname || "").trim().toLowerCase().replace(/\.+$/, "");
+  }
+
+  function detectTldFromHost(hostname) {
+    const host = normalizeHost(hostname);
+    if (!host) return "";
+    const entries = Object.entries(MARKET_DOMAIN_BY_TLD);
+    for (const [tld, domain] of entries) {
+      const shortDomain = `s.${domain}`;
+      if (
+        host === domain
+        || host.endsWith(`.${domain}`)
+        || host === shortDomain
+        || host.endsWith(`.${shortDomain}`)
+      ) {
+        return tld;
+      }
+    }
+    return "";
+  }
+
+  function marketDomainFromTld(tld) {
+    const key = String(tld || "").trim().toLowerCase();
+    return MARKET_DOMAIN_BY_TLD[key] || "";
+  }
+
+  function shortDomainFromTld(tld) {
+    const market = marketDomainFromTld(tld);
+    if (!market) return "";
+    return `s.${market}`;
   }
 
   function extractProductIdsFromPath(pathname) {
@@ -37,7 +110,7 @@
     return null;
   }
 
-  function parseProductIds(urlText, depth) {
+  function parseProductMeta(urlText, depth) {
     if (depth > 2) return null;
     let parsed;
     try {
@@ -46,27 +119,79 @@
       return null;
     }
 
+    const tld = detectTldFromHost(parsed.hostname || "");
     const directIds = extractProductIdsFromPath(parsed.pathname || "/");
-    if (directIds) return directIds;
+    if (directIds) {
+      return {
+        shopId: directIds.shopId,
+        itemId: directIds.itemId,
+        tld
+      };
+    }
 
     const originLinkRaw = parsed.searchParams ? parsed.searchParams.get("origin_link") : "";
     if (!originLinkRaw) return null;
 
-    const fromRaw = parseProductIds(originLinkRaw, depth + 1);
-    if (fromRaw) return fromRaw;
+    const fromRaw = parseProductMeta(originLinkRaw, depth + 1);
+    if (fromRaw) {
+      if (!fromRaw.tld && tld) {
+        fromRaw.tld = tld;
+      }
+      return fromRaw;
+    }
 
     try {
       const decoded = decodeURIComponent(originLinkRaw);
-      return parseProductIds(decoded, depth + 1);
+      const decodedMeta = parseProductMeta(decoded, depth + 1);
+      if (decodedMeta && !decodedMeta.tld && tld) {
+        decodedMeta.tld = tld;
+      }
+      return decodedMeta;
     } catch (_) {
       return null;
     }
   }
 
-  async function resolveFallbackProductIds(inputUrl) {
-    const localIds = parseProductIds(inputUrl, 0);
-    if (localIds && localIds.shopId && localIds.itemId) {
-      return localIds;
+  function buildSubIdFromSlots() {
+    const rawSlots = Array.isArray(cfg.FALLBACK_SUB_SLOTS) ? cfg.FALLBACK_SUB_SLOTS.slice(0, 5) : [];
+    while (rawSlots.length < 5) rawSlots.push("");
+    const slots = rawSlots.map((x) => String(x == null ? "" : x).trim());
+
+    // Backward compatibility
+    if (slots.every((x) => !x)) {
+      slots[0] = String(cfg.FALLBACK_SUB_ID || "").trim();
+    }
+
+    const policy = String(cfg.FALLBACK_SUB_HYPHEN_POLICY || "sanitize").trim().toLowerCase();
+    for (let i = 0; i < slots.length; i += 1) {
+      if (!slots[i].includes("-")) continue;
+      if (policy === "strict") {
+        return {
+          ok: false,
+          error: `Sub ${i + 1} không được chứa dấu "-".`
+        };
+      }
+      slots[i] = slots[i].replace(/-/g, "_");
+    }
+
+    const keepEmpty = cfg.FALLBACK_SUB_KEEP_EMPTY_SLOTS !== false;
+    const subId = keepEmpty
+      ? slots.join("-")
+      : slots.filter(Boolean).join("-");
+    return {
+      ok: Boolean(subId || keepEmpty),
+      value: subId || ""
+    };
+  }
+
+  async function resolveFallbackProductMeta(inputUrl) {
+    const localMeta = parseProductMeta(inputUrl, 0);
+    if (localMeta && localMeta.shopId && localMeta.itemId) {
+      return {
+        shopId: String(localMeta.shopId),
+        itemId: String(localMeta.itemId),
+        tld: String(localMeta.tld || "").toLowerCase()
+      };
     }
 
     if (!api || typeof api.resolveProductIds !== "function") {
@@ -74,13 +199,17 @@
     }
 
     try {
-      const remoteIds = await api.resolveProductIds(inputUrl);
-      if (!remoteIds || !remoteIds.shopId || !remoteIds.itemId) {
+      const remote = await api.resolveProductIds(inputUrl);
+      if (!remote || !remote.shopId || !remote.itemId) {
         return null;
       }
       return {
-        shopId: String(remoteIds.shopId),
-        itemId: String(remoteIds.itemId)
+        shopId: String(remote.shopId),
+        itemId: String(remote.itemId),
+        tld: String(remote.tld || "").toLowerCase(),
+        marketDomain: String(remote.marketDomain || ""),
+        shortDomain: String(remote.shortDomain || ""),
+        landingClean: String(remote.landingClean || "")
       };
     } catch (_) {
       return null;
@@ -88,17 +217,22 @@
   }
 
   async function buildFallbackLink(inputUrl) {
-    const ids = await resolveFallbackProductIds(inputUrl);
-    if (!ids || !ids.shopId || !ids.itemId) return "";
+    const meta = await resolveFallbackProductMeta(inputUrl);
+    if (!meta || !meta.shopId || !meta.itemId) return "";
 
     const affiliateId = pickFallbackAffiliateId();
     if (!affiliateId) return "";
 
-    const subId = String(cfg.FALLBACK_SUB_ID || "cvweb").trim() || "cvweb";
-    const baseUrl = String(cfg.FALLBACK_REDIRECT_URL || "https://s.shopee.vn/an_redir").trim();
-    if (!baseUrl) return "";
+    const sub = buildSubIdFromSlots();
+    if (!sub.ok) return "";
+    const subId = sub.value;
+    const tld = String(meta.tld || cfg.FALLBACK_DEFAULT_TLD || "vn").toLowerCase();
+    const marketDomain = String(meta.marketDomain || marketDomainFromTld(tld)).trim();
+    const shortDomain = String(meta.shortDomain || shortDomainFromTld(tld)).trim();
+    if (!marketDomain || !shortDomain) return "";
 
-    const originLink = `https://shopee.vn/product/${ids.shopId}/${ids.itemId}`;
+    const originLink = String(meta.landingClean || `https://${marketDomain}/product/${meta.shopId}/${meta.itemId}`).trim();
+    const baseUrl = `https://${shortDomain}/an_redir`;
     const params = new URLSearchParams({
       origin_link: originLink,
       affiliate_id: affiliateId,
@@ -205,6 +339,15 @@
     waitTicker = setInterval(render, 1000);
   }
 
+  function requestYtKeyByPopup() {
+    const entered = window.prompt("Cần key admin cấp để Convert link", "") || "";
+    const key = validators.normalizeYtKey(entered).replace(/[^A-Z0-9]/g, "").slice(0, 6);
+    if (!key) {
+      throw new Error("Bạn chưa nhập key YT.");
+    }
+    return validators.validateYtKey(key);
+  }
+
   async function handlePasteFromClipboard() {
     ui.setStatus("");
 
@@ -241,6 +384,7 @@
     ui.setStatus("");
     if (state.isConverting()) return;
     const source = state.getSource ? state.getSource() : "fb";
+    const isYoutubeMode = String(source || "fb").toLowerCase() === "yt";
 
     const now = Date.now();
     const cooldownRemainingMs = getCooldownRemainingMs();
@@ -254,7 +398,7 @@
       return;
     }
 
-    const currentRawInput = window.ShopeeDom && window.ShopeeDom.inp ? window.ShopeeDom.inp.value : ui.getInput();
+    const currentRawInput = dom && dom.inp ? dom.inp.value : ui.getInput();
     const raw = String(currentRawInput || "").trim();
     if (!raw) {
       ui.resetGenerated();
@@ -264,7 +408,12 @@
     }
 
     let cleaned = "";
+    let ytKey = "";
     try {
+      if (isYoutubeMode) {
+        ytKey = requestYtKeyByPopup();
+      }
+
       cleaned = validators.normalizeSingleShopeeLink(raw);
       saveInputCache(currentRawInput);
 
@@ -276,7 +425,7 @@
       ui.setResultPreview("Đang chuyển đổi...");
       ui.setStatus("Đang gửi yêu cầu convert...");
 
-      const jobId = await api.createJob(cleaned, source);
+      const jobId = await api.createJob(cleaned, source, ytKey);
       const shortJobId = String(jobId || "").slice(0, 8);
       startWaitTicker(shortJobId);
 
@@ -312,11 +461,11 @@
     } finally {
       stopWaitTicker();
       // Keep original input even if page state is interrupted/reloaded.
-      if (window.ShopeeDom && window.ShopeeDom.inp) {
-        if (!window.ShopeeDom.inp.value) {
-          window.ShopeeDom.inp.value = currentRawInput;
+      if (dom && dom.inp) {
+        if (!dom.inp.value) {
+          dom.inp.value = currentRawInput;
         }
-        saveInputCache(window.ShopeeDom.inp.value);
+        saveInputCache(dom.inp.value);
       }
       ui.setBusy(false);
     }
@@ -377,8 +526,8 @@
       ui.resetGenerated();
       ui.setStatus("Đã dán 1 link hợp lệ.");
       setTimeout(() => {
-        if (window.ShopeeDom && window.ShopeeDom.inp) {
-          saveInputCache(window.ShopeeDom.inp.value);
+        if (dom && dom.inp) {
+          saveInputCache(dom.inp.value);
         }
       }, 0);
     } catch (err) {
@@ -391,8 +540,8 @@
   function handleInputChange() {
     ui.setStatus("");
     ui.resetGenerated();
-    if (window.ShopeeDom && window.ShopeeDom.inp) {
-      saveInputCache(window.ShopeeDom.inp.value);
+    if (dom && dom.inp) {
+      saveInputCache(dom.inp.value);
     }
   }
 

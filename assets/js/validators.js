@@ -1,6 +1,7 @@
 (function (window) {
   const cfg = window.ShopeeConfig;
   const MAX_REDIRECT_DEPTH = 2;
+  const YT_KEY_REGEX = /^[A-Z0-9]{6}$/;
 
   function normalizeHost(host) {
     return String(host || "").trim().toLowerCase().replace(/\.+$/, "");
@@ -27,6 +28,7 @@
     if (/-i\.(\d+)\.(\d+)\/?$/i.test(path)) return true;
     if (/^\/product\/(\d+)\/(\d+)\/?$/i.test(path)) return true;
     if (/^\/universal-link\/product\/(\d+)\/(\d+)\/?$/i.test(path)) return true;
+    if (/^\/[^/]+\/(\d+)\/(\d+)\/?$/i.test(path)) return true;
     return false;
   }
 
@@ -135,7 +137,24 @@
     return normalizedProductUrl.toString();
   }
 
+  function normalizeYtKey(raw) {
+    return String(raw || "").trim().toUpperCase();
+  }
+
+  function validateYtKey(raw) {
+    const normalized = normalizeYtKey(raw);
+    if (!normalized) {
+      throw new Error("Luồng YT cần key do admin cấp.");
+    }
+    if (!YT_KEY_REGEX.test(normalized)) {
+      throw new Error("Key YT không hợp lệ. Key gồm 6 ký tự A-Z và số.");
+    }
+    return normalized;
+  }
+
   window.ShopeeValidators = {
-    normalizeSingleShopeeLink
+    normalizeSingleShopeeLink,
+    normalizeYtKey,
+    validateYtKey
   };
 })(window);

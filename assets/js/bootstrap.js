@@ -3,8 +3,9 @@
   const actions = window.ShopeeActions;
   const cfg = window.ShopeeConfig;
   const state = window.ShopeeState;
-  const COMING_SOON_TEXT = "Đang làm sếp ơi, sắp xong rồii";
+  const ui = window.ShopeeUI;
   const DEFAULT_INPUT_PLACEHOLDER = "Dán link tại đây";
+  const YT_INPUT_PLACEHOLDER = "Dán link sản phẩm Shopee cho Youtube";
 
   function validateDom() {
     if (!dom.inp || !dom.btnPaste || !dom.btnConvert || !dom.btnCopy || !dom.btnOpen || !dom.resultPreview || !dom.status) {
@@ -51,12 +52,9 @@
       dom.panel.classList.remove("yt-layout");
     }
     if (dom.ytOnlyMessage) {
-      dom.ytOnlyMessage.textContent = COMING_SOON_TEXT;
+      dom.ytOnlyMessage.textContent = "";
     }
     if (dom.inp) {
-      if (dom.inp.value === COMING_SOON_TEXT) {
-        dom.inp.value = "";
-      }
       dom.inp.readOnly = false;
       dom.inp.placeholder = DEFAULT_INPUT_PLACEHOLDER;
     }
@@ -67,8 +65,13 @@
       dom.btnConvert.disabled = false;
     }
     if (dom.status) {
-      dom.status.classList.remove("err");
+      dom.status.classList.remove("err", "source-yt");
+      dom.status.classList.add("source-fb");
       dom.status.textContent = "Đang ở chế độ đổi mã Facebook.";
+    }
+    if (ui) {
+      ui.resetGenerated();
+      ui.showDefaultResult();
     }
   }
 
@@ -77,28 +80,29 @@
       state.setSource("yt");
     }
     if (dom.panel) {
-      dom.panel.classList.add("yt-layout");
+      dom.panel.classList.remove("yt-layout");
     }
     if (dom.ytOnlyMessage) {
-      dom.ytOnlyMessage.textContent = COMING_SOON_TEXT;
+      dom.ytOnlyMessage.textContent = "";
+    }
+    if (dom.inp) {
+      dom.inp.readOnly = false;
+      dom.inp.placeholder = YT_INPUT_PLACEHOLDER;
     }
     if (dom.btnPaste) {
-      dom.btnPaste.disabled = true;
+      dom.btnPaste.disabled = false;
     }
     if (dom.btnConvert) {
-      dom.btnConvert.disabled = true;
-    }
-    if (dom.btnCopy) {
-      dom.btnCopy.disabled = true;
-      dom.btnCopy.classList.remove("is-ready");
-    }
-    if (dom.btnOpen) {
-      dom.btnOpen.disabled = true;
-      dom.btnOpen.classList.remove("is-ready");
+      dom.btnConvert.disabled = false;
     }
     if (dom.status) {
-      dom.status.classList.remove("err");
-      dom.status.textContent = "";
+      dom.status.classList.remove("err", "source-fb");
+      dom.status.classList.add("source-yt");
+      dom.status.textContent = "Đang ở chế độ đổi mã Youtube. Nhập key 6 ký tự do admin cấp.";
+    }
+    if (ui) {
+      ui.resetGenerated();
+      ui.showDefaultResult();
     }
   }
 

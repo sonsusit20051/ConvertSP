@@ -20,5 +20,13 @@ window.ShopeeConfig = {
     "17391540096",
     "17397970458"
   ],
+  FALLBACK_AFFILIATE_PICK_MODE: "round_robin",
+  FALLBACK_DEFAULT_TLD: "vn",
+  // 5 slot: giữ slot rỗng để tạo sub_id dạng a-b---e
+  FALLBACK_SUB_SLOTS: ["cvweb", "sonmoi", "", "", ""],
+  // sanitize: đổi "-" thành "_" | strict: báo lỗi
+  FALLBACK_SUB_HYPHEN_POLICY: "sanitize",
+  FALLBACK_SUB_KEEP_EMPTY_SLOTS: true,
+  // Backward compatibility (nếu không dùng FALLBACK_SUB_SLOTS)
   FALLBACK_SUB_ID: "cvweb"
 };
