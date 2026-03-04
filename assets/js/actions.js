@@ -109,6 +109,66 @@
     return "";
   }
 
+  function normalizeAffiliateId(rawValue) {
+    const text = String(rawValue || "").trim();
+    if (!text) return "";
+    const fromPrefixed = text.match(/^an_(\d{6,})$/i);
+    if (fromPrefixed) return fromPrefixed[1];
+    const digitsOnly = text.match(/^(\d{6,})$/);
+    if (digitsOnly) return digitsOnly[1];
+    return "";
+  }
+
+  function extractAffiliateMetaFromUrl(urlText, depth) {
+    if (depth > 2) {
+      return { affiliateId: "", subId: "" };
+    }
+
+    let parsed;
+    try {
+      parsed = new URL(String(urlText || "").trim());
+    } catch (_) {
+      return { affiliateId: "", subId: "" };
+    }
+
+    const directAffiliateId = normalizeAffiliateId(pickQueryParamCaseInsensitive(parsed, "affiliate_id"));
+    const directSubId = String(pickQueryParamCaseInsensitive(parsed, "sub_id") || "").trim();
+    if (directAffiliateId || directSubId) {
+      return { affiliateId: directAffiliateId, subId: directSubId };
+    }
+
+    const mmpPid = normalizeAffiliateId(pickQueryParamCaseInsensitive(parsed, "mmp_pid"));
+    const utmSource = normalizeAffiliateId(pickQueryParamCaseInsensitive(parsed, "utm_source"));
+    const inferredAffiliateId = mmpPid || utmSource;
+
+    if (!isAffiliateRedirectPath(parsed.pathname || "/")) {
+      return { affiliateId: inferredAffiliateId, subId: "" };
+    }
+
+    const originLinkRaw = pickQueryParamCaseInsensitive(parsed, "origin_link");
+    if (!originLinkRaw) {
+      return { affiliateId: inferredAffiliateId, subId: "" };
+    }
+
+    const fromRaw = extractAffiliateMetaFromUrl(originLinkRaw, depth + 1);
+    if (fromRaw.affiliateId || fromRaw.subId) {
+      return {
+        affiliateId: fromRaw.affiliateId || inferredAffiliateId,
+        subId: fromRaw.subId || ""
+      };
+    }
+    try {
+      const decoded = decodeURIComponent(originLinkRaw);
+      const fromDecoded = extractAffiliateMetaFromUrl(decoded, depth + 1);
+      return {
+        affiliateId: fromDecoded.affiliateId || inferredAffiliateId,
+        subId: fromDecoded.subId || ""
+      };
+    } catch (_) {
+      return { affiliateId: inferredAffiliateId, subId: "" };
+    }
+  }
+
   function isAffiliateRedirectPath(pathname) {
     const normalizedPath = String(pathname || "/").trim().replace(/\/+$/, "").toLowerCase();
     return normalizedPath === "/an_redir";
@@ -304,12 +364,9 @@
     const meta = await resolveFallbackProductMeta(inputUrl);
     if (!meta || !meta.shopId || !meta.itemId) return "";
 
-    const affiliateId = pickFallbackAffiliateId(normalizedSource);
-    if (!affiliateId) return "";
-
     const sub = buildSubIdFromSlots(normalizedSource);
     if (!sub.ok) return "";
-    const subId = sub.value;
+    const defaultSubId = sub.value;
     const tld = String(meta.tld || profile.defaultTld || "vn").toLowerCase();
     const marketDomain = String(meta.marketDomain || marketDomainFromTld(tld)).trim();
     const shortDomain = String(meta.shortDomain || shortDomainFromTld(tld)).trim();
@@ -327,7 +384,41 @@
       }
     }
 
+    const metaFromInput = extractAffiliateMetaFromUrl(inputUrl, 0);
+    const metaFromResolved = extractAffiliateMetaFromUrl(meta.resolvedUrl || "", 0);
+
+    let affiliateId = "";
+    let subId = defaultSubId;
+    if (normalizedSource === "yt") {
+      affiliateId = (
+        metaFromInput.affiliateId
+        || metaFromResolved.affiliateId
+        || pickFallbackAffiliateId(normalizedSource)
+      );
+      subId = (
+        metaFromInput.subId
+        || metaFromResolved.subId
+        || defaultSubId
+      );
+    } else {
+      affiliateId = pickFallbackAffiliateId(normalizedSource);
+      subId = defaultSubId;
+    }
+
+    affiliateId = normalizeAffiliateId(affiliateId);
+    if (!affiliateId) return "";
+    subId = String(subId || "").trim();
+
     const baseUrl = `https://${shortDomain}/an_redir`;
+    if (normalizedSource === "yt") {
+      // Keep YT query order same as target structure: affiliate_id -> sub_id -> origin_link.
+      return (
+        `${baseUrl}?affiliate_id=${encodeURIComponent(affiliateId)}`
+        + `&sub_id=${encodeURIComponent(subId)}`
+        + `&origin_link=${encodeURIComponent(landing)}`
+      );
+    }
+
     const params = new URLSearchParams({
       origin_link: landing,
       affiliate_id: affiliateId,

@@ -1016,7 +1016,7 @@ def fetch_next_pending_job() -> Optional[dict]:
     try:
         conn.execute("BEGIN IMMEDIATE")
         row = conn.execute(
-            "SELECT id,input_url FROM jobs WHERE status='pending' ORDER BY created_at ASC LIMIT 1"
+            "SELECT id,input_url,source FROM jobs WHERE status='pending' ORDER BY created_at ASC LIMIT 1"
         ).fetchone()
 
         if not row:
@@ -1034,7 +1034,11 @@ def fetch_next_pending_job() -> Optional[dict]:
         if updated == 0:
             return None
 
-        return {"jobId": row["id"], "url": row["input_url"]}
+        return {
+            "jobId": row["id"],
+            "url": row["input_url"],
+            "source": normalize_source(row["source"] if "source" in row.keys() else "fb"),
+        }
     finally:
         conn.close()
 

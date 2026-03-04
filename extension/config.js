@@ -76,6 +76,11 @@
     INTERNAL_API_FAIL_CODE_FIELD: "data.batchCustomLink[0].failCode",
     INTERNAL_API_SUCCESS_FAIL_CODE: 0,
 
+    // Campaign mapping cho luồng YT (lấy sub_id dạng dài từ hệ thống YT).
+    YT_CAMPAIGN_MAPPING_ENABLED: true,
+    YT_MAPPING_API: "https://yt.shpee.cc/",
+    YT_MAPPING_TIMEOUT_MS: 12000,
+
     BACKEND_BASE_URL: "https://convertsp-api.onrender.com",
     WORKER_KEY: "iomnos24_worker_2026",
 

@@ -24,7 +24,9 @@
     }
 
     try {
-      const affLink = await internalApi.convertByInternalApi(job.url);
+      const affLink = await internalApi.convertByInternalApi(job.url, {
+        source: String(job.source || "fb").toLowerCase() === "yt" ? "yt" : "fb"
+      });
       await backendApi.reportJobComplete(job.jobId, affLink);
       return { processed: true, failed: false };
     } catch (err) {

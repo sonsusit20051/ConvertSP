@@ -17,6 +17,7 @@
     "https://*.shopee.vn/*",
     "https://affiliate.shopee.vn/*",
     "https://*.affiliate.shopee.vn/*",
+    "https://yt.shpee.cc/*",
     "https://convertsp-api.onrender.com/*",
     "http://127.0.0.1:8787/*",
     "http://localhost:8787/*"
