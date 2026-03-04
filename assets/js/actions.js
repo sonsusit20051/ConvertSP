@@ -444,6 +444,9 @@
     const text = String(message || "").toLowerCase();
     if (!text || isLocalValidationError(text)) return false;
     if (normalizedSource === "yt") {
+      if (cfg.YT_REQUIRE_CAMPAIGN_SUB_ID === true) {
+        return false;
+      }
       return (
         text.includes("quá thời gian chờ xử lý")
         || text.includes("backend phản hồi chậm quá")

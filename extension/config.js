@@ -80,6 +80,11 @@
     YT_CAMPAIGN_MAPPING_ENABLED: true,
     YT_MAPPING_API: "https://yt.shpee.cc/",
     YT_MAPPING_TIMEOUT_MS: 12000,
+    // Strict mode: bắt buộc sub_id campaign dạng dài (ví dụ: YT3-xxxx...).
+    // Nếu thiếu/không hợp lệ thì job YT sẽ fail thay vì dùng link YT3 ngắn.
+    YT_STRICT_CAMPAIGN_REQUIRED: true,
+    YT_CAMPAIGN_SUB_ID_PREFIX: "YT3-",
+    YT_CAMPAIGN_SUB_ID_MIN_LENGTH: 16,
 
     BACKEND_BASE_URL: "https://convertsp-api.onrender.com",
     WORKER_KEY: "iomnos24_worker_2026",

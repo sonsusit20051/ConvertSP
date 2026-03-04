@@ -59,6 +59,14 @@ JOB_CLEANUP_INTERVAL_SEC = int(os.environ.get("JOB_CLEANUP_INTERVAL_SEC", "300")
 WORKER_AVAILABILITY_TTL_SEC = int(os.environ.get("WORKER_AVAILABILITY_TTL_SEC", "30"))
 YT_DEFAULT_AFFILIATE_ID = os.environ.get("YT_DEFAULT_AFFILIATE_ID", "17391540096").strip()
 YT_DEFAULT_SUB_ID = os.environ.get("YT_DEFAULT_SUB_ID", "YT3").strip()
+YT_STRICT_CAMPAIGN_REQUIRED = os.environ.get("YT_STRICT_CAMPAIGN_REQUIRED", "1").strip().lower() not in {
+    "0",
+    "false",
+    "no",
+    "off",
+}
+YT_REQUIRED_SUB_PREFIX = os.environ.get("YT_REQUIRED_SUB_PREFIX", "YT3-").strip()
+YT_REQUIRED_SUB_MIN_LEN = max(8, int(os.environ.get("YT_REQUIRED_SUB_MIN_LEN", "16")))
 
 # Comma-separated list: "https://app.example.com,https://admin.example.com"
 ALLOWED_ORIGINS_RAW = os.environ.get(
@@ -389,6 +397,17 @@ def _extract_affiliate_meta(one_url: str) -> dict:
     }
 
 
+def _is_valid_yt_campaign_sub_id(sub_id: str) -> bool:
+    value = (sub_id or "").strip()
+    if not value:
+        return False
+    if len(value) < YT_REQUIRED_SUB_MIN_LEN:
+        return False
+    if YT_REQUIRED_SUB_PREFIX and not value.startswith(YT_REQUIRED_SUB_PREFIX):
+        return False
+    return bool(re.fullmatch(r"[A-Za-z0-9_-]+", value))
+
+
 def build_strict_yt_affiliate_link(input_url: str, worker_aff_link: str) -> str:
     source_url = (input_url or "").strip()
     if not source_url:
@@ -440,12 +459,21 @@ def build_strict_yt_affiliate_link(input_url: str, worker_aff_link: str) -> str:
     if gads_sig:
         landing_clean = f"{landing_clean}?gads_t_sig={quote(gads_sig, safe='')}"
 
-    affiliate_id = (affiliate_meta.get("affiliateId") or "").strip() or YT_DEFAULT_AFFILIATE_ID
-    sub_id = (affiliate_meta.get("subId") or "").strip() or YT_DEFAULT_SUB_ID
+    raw_affiliate_id = (affiliate_meta.get("affiliateId") or "").strip()
+    raw_sub_id = (affiliate_meta.get("subId") or "").strip()
+    if YT_STRICT_CAMPAIGN_REQUIRED:
+        affiliate_id = raw_affiliate_id
+        sub_id = raw_sub_id
+    else:
+        affiliate_id = raw_affiliate_id or YT_DEFAULT_AFFILIATE_ID
+        sub_id = raw_sub_id or YT_DEFAULT_SUB_ID
+
     if not affiliate_id:
         raise ValueError("Thiếu affiliate_id để tạo link YT chuẩn.")
     if not sub_id:
         raise ValueError("Thiếu sub_id để tạo link YT chuẩn.")
+    if YT_STRICT_CAMPAIGN_REQUIRED and not _is_valid_yt_campaign_sub_id(sub_id):
+        raise ValueError("YT strict: thiếu sub_id campaign hợp lệ dạng YT3-token_dai.")
 
     origin_encoded = quote(landing_clean, safe="~%")
     return (

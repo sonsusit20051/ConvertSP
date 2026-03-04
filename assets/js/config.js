@@ -1,5 +1,5 @@
 window.ShopeeConfig = {
-  APP_VERSION: "2026.03.04.2",
+  APP_VERSION: "2026.03.04.3",
   BACKEND_BASE_URL: "https://convertsp-api.onrender.com",
   JOB_TIMEOUT_MS: 120000,
   JOB_PENDING_PICKUP_TIMEOUT_MS: 5000,
@@ -40,5 +40,8 @@ window.ShopeeConfig = {
   FALLBACK_YT_SUB_HYPHEN_POLICY: "sanitize",
   FALLBACK_YT_SUB_KEEP_EMPTY_SLOTS: false,
   FALLBACK_YT_SUB_ID: "YT3",
-  FALLBACK_YT_INCLUDE_GADS_T_SIG: true
+  FALLBACK_YT_INCLUDE_GADS_T_SIG: true,
+  // Strict YT: bắt buộc lấy campaign sub_id dạng dài (YT3-...).
+  // Khi bật, nếu luồng 1 lỗi thì không tự rớt sang fallback YT3.
+  YT_REQUIRE_CAMPAIGN_SUB_ID: true
 };

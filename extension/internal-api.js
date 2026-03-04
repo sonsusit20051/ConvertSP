@@ -169,6 +169,16 @@
     );
   }
 
+  function isYtCampaignSubIdValid(subId) {
+    const value = String(subId || "").trim();
+    if (!value) return false;
+    const requiredPrefix = String(cfg.YT_CAMPAIGN_SUB_ID_PREFIX || "YT3-").trim();
+    const minLen = Math.max(8, Number(cfg.YT_CAMPAIGN_SUB_ID_MIN_LENGTH) || 16);
+    if (value.length < minLen) return false;
+    if (requiredPrefix && !value.startsWith(requiredPrefix)) return false;
+    return /^[A-Za-z0-9_-]+$/.test(value);
+  }
+
   function replaceUrlPlaceholder(input, url) {
     if (typeof input === "string") return input.replaceAll("__URL__", url);
     if (Array.isArray(input)) return input.map((item) => replaceUrlPlaceholder(item, url));
@@ -430,12 +440,17 @@
   async function applyYtCampaignMeta(rawAffLink, inputUrl) {
     const original = String(rawAffLink || "").trim();
     if (!original) return original;
+    const strictMode = cfg.YT_STRICT_CAMPAIGN_REQUIRED === true;
 
     let meta;
     try {
       meta = await requestYtCampaignMeta(inputUrl);
     } catch (err) {
-      console.warn("YT mapping meta warning:", normalizeError(err, "Không đọc được campaignSubId."));
+      const warning = normalizeError(err, "Không đọc được campaignSubId.");
+      if (strictMode) {
+        throw new Error(`YT strict: không lấy được campaign mapping (${warning}).`);
+      }
+      console.warn("YT mapping meta warning:", warning);
       return original;
     }
 
@@ -445,7 +460,22 @@
     const originLink = String(rawParts.originLink || meta.originLink || "").trim();
     const baseRedirect = String(rawParts.baseRedirect || meta.baseRedirect || "https://s.shopee.vn/an_redir").trim();
 
+    if (strictMode) {
+      if (!affiliateId) {
+        throw new Error("YT strict: thiếu affiliate_id campaign.");
+      }
+      if (!originLink) {
+        throw new Error("YT strict: thiếu origin_link hợp lệ.");
+      }
+      if (!isYtCampaignSubIdValid(subId)) {
+        throw new Error("YT strict: sub_id campaign không hợp lệ (cần dạng YT3-token_dai).");
+      }
+    }
+
     const rewritten = buildAffiliateLink(baseRedirect, affiliateId, subId, originLink);
+    if (strictMode && !rewritten) {
+      throw new Error("YT strict: không dựng được affiliate link chuẩn campaign.");
+    }
     return rewritten || original;
   }
 
