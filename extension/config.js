@@ -87,7 +87,7 @@
     DASHBOARD_AUTO_RELOAD_ENABLED: true,
     DASHBOARD_RELOAD_ALARM: "reload-affiliate-dashboard",
     DASHBOARD_RELOAD_MINUTES: 3,
-    DASHBOARD_REOPEN_URL: "https://affiliate.shopee.vn/",
+    DASHBOARD_REOPEN_URL: "https://affiliate.shopee.vn/offer/custom_link",
     DASHBOARD_RELOAD_URL_PATTERNS: [
       "https://affiliate.shopee.vn/*"
     ],

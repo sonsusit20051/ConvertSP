@@ -224,6 +224,10 @@
       data && data.originLink,
       data && data.origin_link
     ]);
+    const resolvedUrl = pickNonEmptyString([
+      data && data.resolvedUrl,
+      data && data.resolved_url
+    ]);
 
     if (!shopId || !itemId) {
       throw new Error("Backend không tách được shop_id/item_id.");
@@ -236,7 +240,8 @@
       marketDomain,
       shortDomain,
       landingClean,
-      originLink
+      originLink,
+      resolvedUrl
     };
   }
 

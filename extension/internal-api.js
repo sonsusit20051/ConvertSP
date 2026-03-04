@@ -39,6 +39,89 @@
     }
   }
 
+  function isCustomLinkPath(urlText) {
+    try {
+      const parsed = new URL(String(urlText || ""));
+      const path = String(parsed.pathname || "").replace(/\/+$/, "").toLowerCase();
+      return path === "/offer/custom_link";
+    } catch (_) {
+      return false;
+    }
+  }
+
+  function shouldRetryAfterConvertError(errorMessage) {
+    const text = String(errorMessage || "").toLowerCase();
+    if (!text) return false;
+    return (
+      text.includes("failcode=")
+      || text.includes("graphql trả lỗi")
+      || text.includes("api không trả về afflink")
+      || text.includes("http 401")
+      || text.includes("http 403")
+      || text.includes("http 429")
+      || text.includes("http 500")
+      || text.includes("http 502")
+      || text.includes("http 503")
+      || text.includes("http 504")
+      || text.includes("network")
+      || text.includes("failed to fetch")
+    );
+  }
+
+  function unwrapApiPayload(rawData) {
+    if (!Array.isArray(rawData)) return rawData;
+
+    // Some Shopee responses come back as array-wrapped GraphQL payload.
+    const preferred = rawData.find((item) => (
+      item
+      && typeof item === "object"
+      && (
+        Object.prototype.hasOwnProperty.call(item, "data")
+        || Object.prototype.hasOwnProperty.call(item, "errors")
+        || Object.prototype.hasOwnProperty.call(item, "error")
+        || Object.prototype.hasOwnProperty.call(item, "batchCustomLink")
+      )
+    ));
+    if (preferred) return preferred;
+    if (rawData.length === 1 && rawData[0] && typeof rawData[0] === "object") {
+      return rawData[0];
+    }
+    return rawData;
+  }
+
+  function extractFailCode(data) {
+    const candidates = [
+      getByPath(data, cfg.INTERNAL_API_FAIL_CODE_FIELD || ""),
+      getByPath(data, "data.batchCustomLink[0].failCode"),
+      getByPath(data, "batchCustomLink[0].failCode"),
+      data && data.failCode,
+      data && data.fail_code,
+      data && data.code,
+      data && data.errorCode,
+      data && data.error_code,
+      data && data.error
+    ];
+
+    for (const value of candidates) {
+      if (value == null) continue;
+      if (typeof value === "number") return String(value);
+      if (typeof value === "string" && value.trim()) {
+        const m = value.trim().match(/\b\d{6,10}\b/);
+        if (m) return m[0];
+      }
+    }
+    return "";
+  }
+
+  function withFailCodeHint(message, failCode) {
+    const code = String(failCode || "").trim();
+    if (!code) return message;
+    if (code === "90309999") {
+      return `${message} (failCode=90309999: Shopee anti-abuse/captcha, cần mở tab custom_link và xác minh rồi thử lại).`;
+    }
+    return `${message} (failCode=${code}).`;
+  }
+
   function replaceUrlPlaceholder(input, url) {
     if (typeof input === "string") return input.replaceAll("__URL__", url);
     if (Array.isArray(input)) return input.map((item) => replaceUrlPlaceholder(item, url));
@@ -109,39 +192,51 @@
 
   function validateFailCode(data) {
     const field = cfg.INTERNAL_API_FAIL_CODE_FIELD || "";
-    if (!field) return;
-    const value = getByPath(data, field);
-    if (value == null) return;
+    const value = field ? getByPath(data, field) : null;
+    const fallback = extractFailCode(data);
+    const effective = value == null ? fallback : value;
+    if (effective == null || String(effective).trim() === "") return;
     const expected = cfg.INTERNAL_API_SUCCESS_FAIL_CODE;
-    if (value !== expected) {
-      throw new Error(`Shopee trả failCode=${String(value)} (kỳ vọng ${String(expected)}).`);
+    if (String(effective) !== String(expected)) {
+      throw new Error(withFailCodeHint(`Shopee trả failCode=${String(effective)} (kỳ vọng ${String(expected)})`, String(effective)));
     }
   }
 
   function parseConvertResponse(res, data) {
+    const normalizedData = unwrapApiPayload(data);
+
     if (!res.ok) {
-      const gqlError = pickGraphQlError(data);
-      const baseMessage = (data && data.error) || gqlError || `API lỗi HTTP ${res.status}`;
+      const gqlError = pickGraphQlError(normalizedData);
+      const rawMessage = (
+        normalizedData
+        && normalizedData.error != null
+        && String(normalizedData.error).trim()
+      )
+        ? String(normalizedData.error).trim()
+        : "";
+      const baseMessage = rawMessage || gqlError || `API lỗi HTTP ${res.status}`;
+      const failCode = extractFailCode(normalizedData);
       const debug = [];
-      if (data && data.pageOrigin) debug.push(`pageOrigin=${data.pageOrigin}`);
-      if (data && data.requestOrigin) debug.push(`requestOrigin=${data.requestOrigin}`);
-      if (data && data.pageUrl) {
-        const safeUrl = String(data.pageUrl);
+      if (normalizedData && normalizedData.pageOrigin) debug.push(`pageOrigin=${normalizedData.pageOrigin}`);
+      if (normalizedData && normalizedData.requestOrigin) debug.push(`requestOrigin=${normalizedData.requestOrigin}`);
+      if (normalizedData && normalizedData.pageUrl) {
+        const safeUrl = String(normalizedData.pageUrl);
         debug.push(`pageUrl=${safeUrl.slice(0, 240)}${safeUrl.length > 240 ? "..." : ""}`);
       }
-      const message = debug.length > 0 ? `${baseMessage} (${debug.join(", ")})` : baseMessage;
+      const baseWithHint = withFailCodeHint(baseMessage, failCode);
+      const message = debug.length > 0 ? `${baseWithHint} (${debug.join(", ")})` : baseWithHint;
       throw new Error(message);
     }
 
-    const gqlError = pickGraphQlError(data);
+    const gqlError = pickGraphQlError(normalizedData);
     if (gqlError) throw new Error(gqlError);
 
-    validateFailCode(data);
+    validateFailCode(normalizedData);
 
-    const affLink = pickAffLink(data);
+    const affLink = pickAffLink(normalizedData);
     if (!affLink) {
       const debugParts = [];
-      const firstBatchItem = getByPath(data, "data.batchCustomLink[0]");
+      const firstBatchItem = getByPath(normalizedData, "data.batchCustomLink[0]");
 
       if (firstBatchItem && typeof firstBatchItem === "object") {
         try {
@@ -152,18 +247,22 @@
         }
       }
 
-      if (data && typeof data.raw === "string") {
-        const raw = data.raw.replace(/\s+/g, " ").trim();
+      if (normalizedData && typeof normalizedData.raw === "string") {
+        const raw = normalizedData.raw.replace(/\s+/g, " ").trim();
         debugParts.push(`raw=${raw.slice(0, 220)}${raw.length > 220 ? "..." : ""}`);
       }
 
-      if (data && typeof data === "object") {
-        debugParts.push(`keys=${Object.keys(data).join(",") || "<none>"}`);
-        if (data.data && typeof data.data === "object") {
-          debugParts.push(`dataKeys=${Object.keys(data.data).join(",") || "<none>"}`);
+      if (normalizedData && typeof normalizedData === "object") {
+        debugParts.push(`keys=${Object.keys(normalizedData).join(",") || "<none>"}`);
+        if (normalizedData.data && typeof normalizedData.data === "object") {
+          debugParts.push(`dataKeys=${Object.keys(normalizedData.data).join(",") || "<none>"}`);
         }
       }
 
+      const failCode = extractFailCode(normalizedData);
+      if (failCode) {
+        debugParts.push(`failCode=${failCode}`);
+      }
       const suffix = debugParts.length > 0 ? ` ${debugParts.join(" | ")}` : "";
       throw new Error(`API không trả về affLink hợp lệ.${suffix}`);
     }
@@ -382,7 +481,9 @@
     }
   }
 
-  async function ensureAffiliateTab() {
+  async function ensureAffiliateTab(options) {
+    const opts = (options && typeof options === "object") ? options : {};
+    const forceNavigate = Boolean(opts.forceNavigate);
     const urls = Array.isArray(cfg.INTERNAL_API_TAB_MATCH_URLS)
       ? cfg.INTERNAL_API_TAB_MATCH_URLS
       : ["https://affiliate.shopee.vn/*"];
@@ -394,7 +495,11 @@
       let tab = tabs.find((t) => getOrigin(t && t.url) === targetOrigin) || tabs[0];
       if (tab && tab.id) {
         const currentOrigin = getOrigin(tab.url);
-        if (targetOrigin && currentOrigin && currentOrigin !== targetOrigin) {
+        const needNavigateToWorkerPage = !isCustomLinkPath(tab.url) || forceNavigate;
+        if (
+          (targetOrigin && currentOrigin && currentOrigin !== targetOrigin)
+          || needNavigateToWorkerPage
+        ) {
           tab = await chrome.tabs.update(tab.id, { url: openUrl });
         }
         await waitTabComplete(tab.id, 12000).catch(() => {});
@@ -415,11 +520,21 @@
     return tab;
   }
 
-  async function convertViaAffiliateTab(url) {
-    const tab = await ensureAffiliateTab();
+  async function convertViaAffiliateTab(url, options) {
+    const opts = (options && typeof options === "object") ? options : {};
+    const includeCapturedHeaders = opts.includeCapturedHeaders !== false;
+    const tab = await ensureAffiliateTab({ forceNavigate: Boolean(opts.forceNavigate) });
     if (!tab || !tab.id) {
       throw new Error("Không tìm thấy tab Shopee Affiliate hợp lệ.");
     }
+
+    const capturedHeaders = (
+      includeCapturedHeaders
+      && cfg.INTERNAL_API_USE_CAPTURED_HEADERS
+      && self.ExtHeaderCache
+    )
+      ? self.ExtHeaderCache.getCapturedHeaders()
+      : {};
 
     const payload = {
       url,
@@ -430,7 +545,7 @@
       extraBody: cfg.INTERNAL_API_EXTRA_BODY,
       extraHeaders: {
         ...(cfg.INTERNAL_API_EXTRA_HEADERS || {}),
-        ...((cfg.INTERNAL_API_USE_CAPTURED_HEADERS && self.ExtHeaderCache) ? self.ExtHeaderCache.getCapturedHeaders() : {})
+        ...capturedHeaders
       },
       csrfCookieName: cfg.INTERNAL_API_CSRF_COOKIE_NAME,
       csrfHeaderName: cfg.INTERNAL_API_CSRF_HEADER_NAME,
@@ -480,10 +595,33 @@
       ? "cookie/affiliate_tab"
       : `${mode}/service_worker`;
 
-    try {
-      if (mode === "cookie" && cookieSource === "affiliate_tab") {
-        return await convertViaAffiliateTab(url);
+    if (mode === "cookie" && cookieSource === "affiliate_tab") {
+      try {
+        return await convertViaAffiliateTab(url, {
+          forceNavigate: false,
+          includeCapturedHeaders: true
+        });
+      } catch (firstErr) {
+        const firstMessage = normalizeError(firstErr, "Không convert được link.");
+        if (!shouldRetryAfterConvertError(firstMessage)) {
+          throw new Error(`[${route}] ${firstMessage}`);
+        }
+
+        // Retry 1 lần: ép về trang worker chuẩn + bỏ captured headers cũ (có thể đã stale).
+        await new Promise((resolve) => setTimeout(resolve, 500));
+        try {
+          return await convertViaAffiliateTab(url, {
+            forceNavigate: true,
+            includeCapturedHeaders: false
+          });
+        } catch (secondErr) {
+          const secondMessage = normalizeError(secondErr, "Không convert được link.");
+          throw new Error(`[${route}] ${firstMessage} | retry: ${secondMessage}`);
+        }
       }
+    }
+
+    try {
       return await convertViaServiceWorkerFetch(url);
     } catch (err) {
       const msg = normalizeError(err, "Không convert được link.");
